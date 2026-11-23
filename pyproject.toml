@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bittle-cli"
+version = "1.0.0"
+description = "Command-line interface and terminal controller for Petoi Bittle and Bittle X robots"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pyserial>=3.5",
+    "bleak>=0.21.0",
+    "websockets>=11.0",
+]
+
+[project.scripts]
+bittle = "bittle_cli:main_cli"
+bittle-mock = "mock_bittle:main"
+
+[tool.setuptools]
+py-modules = ["bittle_cli", "bittle_mix", "mock_bittle"]
+
+[tool.setuptools.package-data]
+"*" = ["combos.json"]

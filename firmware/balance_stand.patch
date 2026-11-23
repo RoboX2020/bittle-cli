@@ -1,0 +1,350 @@
+diff -ruN a/OpenCatEsp32.ino b/OpenCatEsp32.ino
+--- a/OpenCatEsp32.ino	2026-11-14 09:05:32.590171811 +0000
++++ b/OpenCatEsp32.ino	2026-11-14 09:05:32.606412044 +0000
+@@ -102,6 +102,9 @@
+   playLight();
+ #endif
+   reaction();
++#ifdef GYRO_PIN
++  balanceLoop();  // two-leg stand PID tick (no-op unless the 'y' token started it)
++#endif
+ 
+ #ifdef WEB_SERVER
+   WebServerLoop();  // Handle asynchronous Web requests
+diff -ruN a/src/OpenCat.h b/src/OpenCat.h
+--- a/src/OpenCat.h	2026-11-14 09:05:32.593048929 +0000
++++ b/src/OpenCat.h	2026-11-14 09:05:32.604807816 +0000
+@@ -644,6 +644,9 @@
+ #include "randomMind.h"
+ #include "skill.h"
+ #include "moduleManager.h"
++#ifdef GYRO_PIN
++#include "balanceStand.h"  // closed-loop handstand / rear stand, token 'y'
++#endif
+ #ifdef WEB_SERVER
+ #include "webServer.h"
+ #endif
+diff -ruN a/src/balanceStand.h b/src/balanceStand.h
+--- a/src/balanceStand.h	1970-01-01 00:00:00.000000000 +0000
++++ b/src/balanceStand.h	2026-11-14 09:15:26.151402288 +0000
+@@ -0,0 +1,279 @@
++// balanceStand.h - closed-loop handstand and hind-leg (rear) stand for OpenCatEsp32 Bittle.
++//
++// Standing on two paws is statically stable only while the weight stays over the paws' small
++// contact patch. This mode holds a tunable top pose, streams tilt telemetry for tuning, catches
++// falls by dropping onto four legs, and offers a PID on body pitch / support-leg tilt that drives
++// the support shoulders once per IMU sample. The PID is OFF by default (all gains 0): a planar
++// simulation (sim/stand_sim.py) found that fast shoulder feedback cannot stop a tip once the weight
++// passes the paw edge, so enable it only to experiment on the real robot.
++//
++// Serial token 'y' (text). Every subcommand is one letter plus optional numbers:
++//   yh            handstand: entry keyframes (from the hds skill), then balance
++//   yr            rear stand on the hind legs: entry keyframes (from the hu skill), then balance
++//   yg            balance from the current pose (after you put the robot in a stand by hand or by a skill)
++//   yx            stop balancing and hold the pose. Any non-'y' command (ksit, d, ...) also stops it
++//   yz            setpoint = current pitch (hold the robot balanced in your hand, send yz, let go)
++//   ya DEG        setpoint = DEG (absolute pitch)
++//   yp KP KI KD   PID gains, in degrees of shoulder rotation per degree of pitch error
++//   ys SIGN       +1 or -1: direction of the correction (find it with the push test in the README)
++//   ym MIX        error = pitch - setpoint - MIX x (correction already applied). 0 = body pitch,
++//                 +1 or -1 = support-leg tilt (the sign depends on how the joint turns the body)
++//   yc 0|1        on a fall, drop onto four legs (default 1) or just stop
++//   yl LIM FALL   max correction (deg) and the pitch error (deg) that counts as a fall
++//   yf ALPHA      derivative low-pass, 0..1 (1 = unfiltered)
++//   yw AIR KNEE ROLL   extra gains: swing the airborne legs (AIR x u), bend support knees (KNEE x u),
++//                      differential support knees against roll error (ROLL x roll)
++//   yb IDX DEG    change one joint of the base pose (0..15); yB copies the current pose into it
++//   yt N          telemetry every N control ticks (0 = off). Lines: "#B ms pitch err u roll"
++//   ye 0|1        external control: the laptop sends the correction with yu instead of the PID
++//   yu U          external correction in degrees (only while ye 1)
++//   y?            print every parameter
++#pragma once
++#include <math.h>
++#include <stdio.h>
++
++#define T_BALANCE_STAND 'y'
++
++// ---------------------------------------------------------------- pure controller (host-testable)
++struct StandPID {
++  float kp = 0, ki = 0, kd = 0;            // deg of joint per deg of error; 0 = hold the pose only
++  float sign = 1;                          // flips the correction direction
++  float limit = 30;                        // |u| clamp, degrees
++  float dAlpha = 0.35f;                    // derivative low-pass, 0..1
++  float integ = 0, prevErr = 0, dFilt = 0;
++  bool first = true;
++
++  void reset() {
++    integ = 0;
++    dFilt = 0;
++    first = true;
++  }
++
++  float update(float err, float dt) {
++    if (dt <= 0) dt = 0.001f;
++    float d = first ? 0 : (err - prevErr) / dt;
++    first = false;
++    prevErr = err;
++    dFilt += dAlpha * (d - dFilt);
++    float pd = kp * err + kd * dFilt;
++    // Conditional integration: stop accumulating while the output is saturated (anti-windup).
++    float iNext = integ + err * dt;
++    if (fabsf(pd + ki * iNext) < limit) integ = iNext;
++    float u = sign * (pd + ki * integ);
++    return u > limit ? limit : (u < -limit ? -limit : u);
++  }
++};
++
++#ifndef BALANCE_STAND_HOST_TEST  // ---------------------------------------- firmware glue
++
++enum StandState : uint8_t { STAND_OFF, STAND_ON };
++
++// Keyframes: 16 joint angles + speed (the behavior-frame speed field, deg per step / 8 like skill.h).
++// Handstand frames 0-4 come from the hds behavior in InstinctBittleESP.h; the base pose averages
++// its two alternating top frames. Rear stand frames 0-4 come from the hu (hands up) behavior.
++const int8_t handstandEntry[][DOF + 1] = {
++  {  0, 0, 0, 0, 0, 0, 0, 0,  30,  30,  30,  30,  30,  30,  30,  30,  8 },
++  { 82, 0, 0, 0, 0, 0, 0, 0, 112, 112,  30,  30,  30,  30,  30,  30,  8 },
++  { 82, 0, 0, 0, 0, 0, 0, 0,  50,  50,   0,   0,   0,   0,   0,   0, 12 },
++  { 82, 0, 0, 0, 0, 0, 0, 0,  50,  50,  81,  81,   0,   0,   0,   0, 16 },
++  { 85, 0, 0, 0, 0, 0, 0, 0,  50,  50, 100, 100,   0,   0,  38,  38, 32 },
++};
++const int8_t rearEntry[][DOF + 1] = {
++  {  0,   0,  0, 0, 0, 0, 0, 0, 30, 30, 30, 30, 30, 30,  30,  30,  8 },
++  { 39, -22, 22, 0, 0, 0, 0, 0, 30, 30, 74, 74, 74, 74, -14, -14, 12 },
++  { 26, -22, 22, 0, 0, 0, 0, 0, 30, 30, 31,  3, 91, 74, -14,  32, 12 },
++  {  9, -22, 22, 0, 0, 0, 0, 0, 35, 35,  3,  3, 85, 85,  43,  43, 12 },
++  {  9, -22, 22, 0, 0, 0, 0, 0, 35, 35, 40, 40, 85, 85,  21,  21,  8 },
++};
++
++struct StandCtl {
++  StandState state = STAND_OFF;
++  StandPID pid;
++  char mode = 'g';             // 'h' handstand, 'r' rear, 'g' generic (current pose)
++  int base[DOF];               // pose the corrections are added to
++  int8_t support[2] = { 8, 9 }, air[2] = { 10, 11 }, supportKnee[2] = { 12, 13 };
++  float setpoint = 0, fallLimit = 35, mix = 0;
++  bool catchFall = true;
++  float airGain = 0, kneeGain = 0, rollGain = 0;
++  bool external = false;
++  float uExt = 0, u = 0;
++  int teleEvery = 0;
++  unsigned long ticks = 0, lastMicros = 0, fallSince = 0;
++  bool savedGyroBalance = true;
++  int modeBase[2][DOF];        // tuned top pose per mode: [0] handstand, [1] rear stand
++  bool modeBaseSet[2] = { false, false };
++} stand;
++
++void standSelectLegs(char mode) {
++  bool hand = mode == 'h';  // handstand stands on the front legs, rear stand on the hind legs
++  stand.support[0] = hand ? 8 : 10;
++  stand.support[1] = hand ? 9 : 11;
++  stand.air[0] = hand ? 10 : 8;
++  stand.air[1] = hand ? 11 : 9;
++  stand.supportKnee[0] = hand ? 12 : 14;
++  stand.supportKnee[1] = hand ? 13 : 15;
++}
++
++void standPrintParams() {
++  char buf[200];
++  snprintf(buf, sizeof(buf),
++           "#P mode %c on %d kp %.3f ki %.3f kd %.3f sign %.0f mix %.2f lim %.0f fall %.0f dA %.2f air %.2f knee %.2f roll %.2f sp %.1f ext %d tele %d catch %d",
++           stand.mode, stand.state == STAND_ON, stand.pid.kp, stand.pid.ki, stand.pid.kd, stand.pid.sign, stand.mix, stand.pid.limit,
++           stand.fallLimit, stand.pid.dAlpha, stand.airGain, stand.kneeGain, stand.rollGain, stand.setpoint, stand.external,
++           stand.teleEvery, stand.catchFall);
++  printToAllPorts(buf);
++  String pose = "#Q";
++  for (int i = 0; i < DOF; i++) pose += " " + String(stand.base[i]);
++  printToAllPorts(pose);
++}
++
++void standStop(const char *why) {
++  if (stand.state == STAND_OFF) return;
++  stand.state = STAND_OFF;
++  gyroBalanceQ = stand.savedGyroBalance;
++  printToAllPorts(String("#B stop ") + why);
++}
++
++const int8_t fourLegPose[DOF] = { 0, 0, 0, 0, 0, 0, 0, 0, 30, 30, 30, 30, 30, 30, 30, 30 };
++
++void standCatch() {  // fast move to the four-leg stand so the robot lands on its feet, not its back
++  int target[DOF];
++  for (int i = 0; i < DOF; i++) target[i] = fourLegPose[i];
++  transform(target, 1, 4);
++}
++
++void standStart(char mode) {
++  if (!updateGyroQ) {
++    printToAllPorts("#B error: IMU updates are off (send gU)");
++    return;
++  }
++  stand.savedGyroBalance = gyroBalanceQ;
++  gyroBalanceQ = false;  // no reflexes (lifted/flipped reactions) and no posture adjust() while balancing
++  imuSkip = IMU_SKIP;
++  frame = 0;
++  stand.mode = mode;
++  if (mode == 'h' || mode == 'r') {
++    standSelectLegs(mode);
++    const int8_t(*keys)[DOF + 1] = mode == 'h' ? handstandEntry : rearEntry;
++    int n = mode == 'h' ? sizeof(handstandEntry) / sizeof(handstandEntry[0]) : sizeof(rearEntry) / sizeof(rearEntry[0]);
++    byte m = mode == 'h' ? 0 : 1;
++    if (!stand.modeBaseSet[m]) {  // first use: the last keyframe is the top pose
++      for (int i = 0; i < DOF; i++) stand.modeBase[m][i] = keys[n - 1][i];
++      stand.modeBaseSet[m] = true;
++    }
++    int target[DOF];
++    for (int k = 0; k < n; k++) {  // the last keyframe is replaced by the (possibly tuned) top pose
++      for (int i = 0; i < DOF; i++) target[i] = k == n - 1 ? stand.modeBase[m][i] : keys[k][i];
++      transform(target, 1, keys[k][DOF] / 8.0);
++    }
++    for (int i = 0; i < DOF; i++) stand.base[i] = stand.modeBase[m][i];
++  } else {
++    for (int i = 0; i < DOF; i++) stand.base[i] = currentAng[i];
++  }
++  stand.pid.reset();
++  stand.uExt = 0;
++  stand.u = 0;
++  stand.ticks = 0;
++  stand.fallSince = 0;
++  stand.lastMicros = micros();
++  stand.state = STAND_ON;
++  printToAllPorts(String("#B start ") + mode);
++}
++
++void standApply(float u, float rollErr) {
++  for (byte s = 0; s < 2; s++) {
++    calibratedPWM(stand.support[s], stand.base[stand.support[s]] + u);
++    if (stand.airGain != 0)
++      calibratedPWM(stand.air[s], stand.base[stand.air[s]] + stand.airGain * u);
++    if (stand.kneeGain != 0 || stand.rollGain != 0) {
++      float rollPart = (s == 0 ? 1 : -1) * stand.rollGain * rollErr;
++      calibratedPWM(stand.supportKnee[s], stand.base[stand.supportKnee[s]] + stand.kneeGain * u + rollPart);
++    }
++  }
++}
++
++// Called from loop() every pass. Runs one control tick per new IMU sample (the IMU task updates every ~5 ms).
++void balanceLoop() {
++  if (stand.state != STAND_ON) return;
++  unsigned long now = micros();
++  float dt = (now - stand.lastMicros) * 1e-6f;
++  if (dt < IMU_PERIOD * 1e-3f) return;
++  stand.lastMicros = now;
++  idleTimer = millis();  // keep random-mind idle behaviors from starting mid-stand
++
++  float pitch = ypr[1], roll = ypr[2];
++  float err = pitch - stand.setpoint - stand.mix * stand.u;  // mix != 0: support-leg tilt instead of body pitch
++  if (fabsf(pitch - stand.setpoint) > stand.fallLimit) {
++    if (!stand.fallSince) stand.fallSince = millis();
++    if (millis() - stand.fallSince > 60) {
++      standStop("fall");
++      if (stand.catchFall) standCatch();
++      return;
++    }
++  } else
++    stand.fallSince = 0;
++
++  float u = stand.external ? stand.uExt : stand.pid.update(err, dt);
++  if (stand.external) stand.pid.prevErr = err;
++  stand.u = u;
++  standApply(u, roll);
++
++  if (stand.teleEvery > 0 && ++stand.ticks % stand.teleEvery == 0) {
++    char buf[64];
++    snprintf(buf, sizeof(buf), "#B %lu %.2f %.2f %.2f %.2f", millis(), pitch, err, u, roll);
++    printToAllPorts(buf);
++  }
++}
++
++// Handles the 'y' token. newCmd holds the text after the token, e.g. "p 1.2 0.4 0.05".
++void standCommand(const char *cmd) {
++  while (*cmd == ' ') cmd++;
++  char sub = *cmd;
++  const char *args = sub ? cmd + 1 : cmd;
++  float a = 0, b = 0, c = 0;
++  int n = sscanf(args, "%f %f %f", &a, &b, &c);
++  switch (sub) {
++    case 'h':
++    case 'r':
++    case 'g': standStart(sub); break;
++    case 'x': standStop("user"); break;
++    case 'z': stand.setpoint = ypr[1]; stand.pid.reset(); break;
++    case 'a': if (n >= 1) { stand.setpoint = a; stand.pid.reset(); } break;
++    case 'p':
++      if (n >= 1) stand.pid.kp = a;
++      if (n >= 2) stand.pid.ki = b;
++      if (n >= 3) stand.pid.kd = c;
++      break;
++    case 's': if (n >= 1) stand.pid.sign = a < 0 ? -1 : 1; break;
++    case 'm': if (n >= 1) stand.mix = a; break;
++    case 'c': if (n >= 1) stand.catchFall = a != 0; break;
++    case 'l':
++      if (n >= 1) stand.pid.limit = fabsf(a);
++      if (n >= 2) stand.fallLimit = fabsf(b);
++      break;
++    case 'f': if (n >= 1) stand.pid.dAlpha = fmaxf(0.01f, fminf(1.0f, a)); break;
++    case 'w':
++      if (n >= 1) stand.airGain = a;
++      if (n >= 2) stand.kneeGain = b;
++      if (n >= 3) stand.rollGain = c;
++      break;
++    case 'b':  // also remembered as this mode's top pose for the next yh / yr
++      if (n >= 2 && a >= 0 && a < DOF) {
++        stand.base[int(a)] = int(b);
++        if (stand.mode != 'g') {
++          byte m = stand.mode == 'h' ? 0 : 1;
++          if (stand.modeBaseSet[m]) stand.modeBase[m][int(a)] = int(b);
++        }
++        if (stand.state == STAND_OFF) calibratedPWM(int(a), b);
++      }
++      break;
++    case 'B': for (int i = 0; i < DOF; i++) stand.base[i] = currentAng[i]; break;
++    case 't': if (n >= 1) stand.teleEvery = max(0, int(a)); break;
++    case 'e': if (n >= 1) { stand.external = a != 0; stand.uExt = 0; } break;
++    case 'u': if (n >= 1) stand.uExt = fmaxf(-stand.pid.limit, fminf(stand.pid.limit, a)); break;
++    case '?': standPrintParams(); break;
++    default: printToAllPorts("#B unknown y subcommand"); break;
++  }
++}
++
++#endif  // BALANCE_STAND_HOST_TEST
+diff -ruN a/src/reaction.h b/src/reaction.h
+--- a/src/reaction.h	2026-11-14 09:05:32.593078739 +0000
++++ b/src/reaction.h	2026-11-14 09:05:32.606310235 +0000
+@@ -342,6 +342,10 @@
+   if (newCmdIdx) {
+     // PTLF("-----");
+     lowerToken = tolower(token);
++#ifdef GYRO_PIN
++    if (token != T_BALANCE_STAND)
++      standStop("cmd");  // any other command ends a two-leg stand
++#endif
+     if (initialBoot) {  //-1 for marking the boot-up calibration state
+       fineAdjustQ = true;
+       // updateGyroQ = true;
+@@ -357,7 +361,11 @@
+       idleTimer = millis();
+     if (newCmdIdx < 5 && lowerToken != T_BEEP && token != T_MEOW && token != T_LISTED_BIN
+         && token != T_INDEXED_SIMULTANEOUS_BIN && token != T_TILT && token != T_READ && token != T_WRITE
+-        && token != T_JOYSTICK && token != T_EXTENSION)
++        && token != T_JOYSTICK && token != T_EXTENSION
++#ifdef GYRO_PIN
++        && token != T_BALANCE_STAND  // no beep for the 50 Hz yu stream
++#endif
++        )
+       beep(15 + newCmdIdx, 5);  // ToDo: check the muted sound when newCmdIdx = -1
+     if (!workingStiffness
+         && (lowerToken == T_SKILL || lowerToken == T_INDEXED_SEQUENTIAL_ASC
+@@ -1530,6 +1538,13 @@
+                                  // 10 4 0, 15 10 0 4 0:100>
+           break;
+         }
++#ifdef GYRO_PIN
++      case T_BALANCE_STAND:
++        {
++          standCommand(newCmd);
++          break;
++        }
++#endif
+       default:
+         {
+           printToAllPorts("Undefined token!");
