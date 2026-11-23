@@ -353,7 +353,8 @@ async def find_ble(target=None, timeout=6.0):
             if target or uart or name.endswith("_BLE") or "ble" in name.lower() or "bittle" in name.lower() or "petoi" in name.lower():
                 robots.append(dev)
         return robots[0] if robots else None
-    except Exception:
+    except Exception as e:
+        print(f"Bluetooth error: {e}")
         return None
 
 
