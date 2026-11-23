@@ -340,18 +340,21 @@ async def find_ble(target=None, timeout=6.0):
         pass
 
     # 2. Discover devices actively broadcasting advertisements
-    from bleak import BleakScanner
-    found = await BleakScanner.discover(timeout=timeout, return_adv=True)
-    robots = []
-    for dev, adv in found.values():
-        name = dev.name or adv.local_name or ""
-        adv_uuids = [u.lower() for u in adv.service_uuids]
-        uart = any(s in u for s in ["ffe0", "6e40"] for u in adv_uuids)
-        if target and target.lower() not in (name.lower(), dev.address.lower()) and target.lower() not in name.lower():
-            continue
-        if target or uart or name.endswith("_BLE") or "ble" in name.lower() or "bittle" in name.lower() or "petoi" in name.lower():
-            robots.append(dev)
-    return robots[0] if robots else None
+    try:
+        from bleak import BleakScanner
+        found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+        robots = []
+        for dev, adv in found.values():
+            name = dev.name or adv.local_name or ""
+            adv_uuids = [u.lower() for u in adv.service_uuids]
+            uart = any(s in u for s in ["ffe0", "6e40"] for u in adv_uuids)
+            if target and target.lower() not in (name.lower(), dev.address.lower()) and target.lower() not in name.lower():
+                continue
+            if target or uart or name.endswith("_BLE") or "ble" in name.lower() or "bittle" in name.lower() or "petoi" in name.lower():
+                robots.append(dev)
+        return robots[0] if robots else None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------- library of moves
@@ -363,10 +366,18 @@ class Library:
         self.segments = {}
         c_path = Path(combos_path) if combos_path else (HERE / "combos.json")
         if not c_path.exists():
-            if Path("combos.json").exists():
-                c_path = Path("combos.json")
-            elif (HERE / "combos.json").exists():
-                c_path = HERE / "combos.json"
+            search_candidates = [
+                Path("combos.json"),
+                HERE / "combos.json",
+                Path(__file__).resolve().parent / "combos.json",
+                Path.home() / "bittle-cli" / "combos.json",
+                Path.home() / ".local" / "share" / "bittle" / "combos.json",
+                Path.home() / ".config" / "bittle" / "combos.json",
+            ]
+            for candidate in search_candidates:
+                if candidate.exists():
+                    c_path = candidate
+                    break
         if c_path.exists():
             try:
                 data = json.loads(c_path.read_text())
@@ -740,6 +751,8 @@ async def scan():
             print("  (no additional advertising devices found)")
     except ImportError:
         print("BLE: install bleak to scan (pip install bleak)")
+    except Exception as e:
+        print(f"  (Bluetooth unavailable: {e})")
     try:
         from serial.tools import list_ports
         print("serial ports (USB, or paired classic Bluetooth '_SSP'):")
