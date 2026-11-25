@@ -21,9 +21,9 @@ Every lab references the **actual code, URDF/USD models, images, checkpoints, fi
 
 ## Repository Data Map (All Computer Data Included)
 
-- **CLI & Firmware:** [bittle_cli.py](../bittle_cli.py), [bittle_mix.py](../bittle_mix.py), [combos.json](../combos.json), [mock_bittle.py](../mock_bittle.py), [test_bittle.py](../test_bittle.py), [firmware/](../firmware/), [sim/stand_sim.py](../sim/stand_sim.py), [cli_data/](../cli_data/)
-- **Images & Screenshots:** [assets/images/](../assets/images/) (`IsaacSim.png`, `pyqt_gui.png`, `training.png`, `extension.png`, `bittle_usd_thumb.png`)
-- **URDF & Meshes:** [assets/urdf/](../assets/urdf/) (`bittle.urdf`, `bittle.stl`, `meshes/obj/*.obj`, `joint_locs.txt`, `joint_monkey.py`)
-- **USD Models:** [assets/usd_10x/](../assets/usd_10x/) (fixed articulation root) and [assets/usd_real_1x/](../assets/usd_real_1x/) (1:1 real-scale `0.1×` linear / `0.01×` inertia)
-- **Training Configs, Scripts, Checkpoints & Logs:** [training/](../training/) (`isaaclab_bittle_config/`, `scripts/`, `models/`, `logs/`, `legacy_isaac_sim_4_5/`)
-- **Worklog & Inventory:** [docs/](../docs/)
+- **CLI & Firmware:** [bittle_cli.py](../bittle_cli.py), [bittle_mix.py](../bittle_mix.py), [combos.json](../combos.json), [mock_bittle.py](../mock_bittle.py), [test_bittle.py](../test_bittle.py), [firmware/](https://github.com/RoboX2020/bittle-cli/tree/main/firmware), [sim/stand_sim.py](../sim/stand_sim.py), [cli_data/](https://github.com/RoboX2020/bittle-cli/tree/main/cli_data)
+- **Images & Screenshots:** [assets/images/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/images) (`IsaacSim.png`, `pyqt_gui.png`, `training.png`, `extension.png`, `bittle_usd_thumb.png`)
+- **URDF & Meshes:** [assets/urdf/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/urdf) (`bittle.urdf`, `bittle.stl`, `meshes/obj/*.obj`, `joint_locs.txt`, `joint_monkey.py`)
+- **USD Models:** [assets/usd_10x/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/usd_10x) (fixed articulation root) and [assets/usd_real_1x/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/usd_real_1x) (1:1 real-scale `0.1×` linear / `0.01×` inertia)
+- **Training Configs, Scripts, Checkpoints & Logs:** [training/](https://github.com/RoboX2020/bittle-cli/tree/main/training) (`isaaclab_bittle_config/`, `scripts/`, `models/`, `logs/`, `legacy_isaac_sim_4_5/`)
+- **Worklog & Inventory:** [docs/](https://github.com/RoboX2020/bittle-cli/tree/main/docs)
