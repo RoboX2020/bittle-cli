@@ -30,11 +30,12 @@ Pre-packaging working directory from `2026-11-13` – `2026-11-14`. Contains:
 
 | Path | Contents & Purpose |
 |---|---|
-| `/home/robotics/isaac/bittle_asset/` | Fixed USD stage (`bittle.usd`, `configuration/bittle_base.usd`, `bittle_physics.usd`, `bittle_sensor.usd`) with duplicate `ArticulationRootAPI` removed from `/bittle/base_frame_link`. |
-| `/home/robotics/isaac/bittle_training/` | Turnkey RL scripts (`train.sh`, `play.sh`, `start_tensorboard.sh`, `README.md`), `custom_env/bittle_env_cfg.py`, and converged checkpoint `bittle_policy_final.pt` (`735,925` bytes). |
-| `/home/robotics/isaac/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/bittle/` | Registered Gym tasks `Isaac-Velocity-Flat-Bittle` & `Isaac-Velocity-Rough-Bittle` (`flat_env_cfg.py`, `rough_env_cfg.py`, `agents/rsl_rl_ppo_cfg.py`, `__init__.py`). |
-| `/home/robotics/isaac/IsaacLab/logs/rsl_rl/bittle_flat/` | TensorBoard events, checkpoints (`model_0.pt`..`model_1499.pt`), `params/{agent,env}.yaml`, and TorchScript `exported/policy.pt` (`2026-11-14_10-57-04` full run + two earlier 5/10-iter smoke tests). |
-| `/home/robotics/isaac/Bittle-IsaacSim/` | Legacy `Dafodilrat/Bittle-IsaacSim` clone (Isaac Sim 4.5.0; original `Bittle_URDF/bittle/` USD, `docker-compose.yaml`, `dockerfile`, `launch.py`, and broken/deprecated `exts/customView/`). |
+| `/home/robotics/isaac/bittle_asset/` | Fixed 10×-scale USD stage (`bittle.usd`, `configuration/bittle_base.usd`, `bittle_physics.usd`, `bittle_sensor.usd`) with duplicate `ArticulationRootAPI` removed from `/bittle/base_frame_link`. |
+| `/home/robotics/isaac/bittle_asset_real/` | True 1:1 real-scale USD stage (`0.1×` linear geometry/joints/COM, `0.01×` diagonal inertia, `0.271 kg` real mass). |
+| `/home/robotics/isaac/bittle_training/` | Turnkey RL scripts (`train.sh`, `play.sh`, `train_handstand.sh`, `play_handstand.sh`, `start_tensorboard.sh`, `README.md`), `custom_env/bittle_env_cfg.py`, training logs, and converged locomotion checkpoint `bittle_policy_final.pt` (`735,925` bytes). |
+| `/home/robotics/isaac/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/core/velocity/config/bittle/` | Registered Gym tasks `Isaac-Velocity-Flat-Bittle`, `Isaac-Velocity-Rough-Bittle`, and `Isaac-Handstand-Bittle` (`flat_env_cfg.py`, `rough_env_cfg.py`, `handstand_env_cfg.py`, `handstand_mdp.py`, `agents/rsl_rl_ppo_cfg.py`, `__init__.py`). |
+| `/home/robotics/isaac/IsaacLab/logs/rsl_rl/` | Training logs, checkpoints, `params/{agent,env}.yaml`, and TensorBoard `tfevents` across `bittle_flat/`, `bittle_handstand/`, and `bittle_handstand_real/`. |
+| `/home/robotics/isaac/Bittle-IsaacSim/` | Legacy `Dafodilrat/Bittle-IsaacSim` clone (Isaac Sim 4.5.0; original `Bittle_URDF/bittle/` USD, `docker-compose.yaml`, `dockerfile`, `launch.py`, screenshots in `images/`, and broken/deprecated `exts/customView/`). |
 
 ---
 

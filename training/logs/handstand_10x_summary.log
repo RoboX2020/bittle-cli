@@ -1,0 +1,20 @@
+    raise ValueError(
+ValueError: The rewards returned by the environment contain NaN values. This usually indicates a bug in the environment's reward computation.
+    raise ValueError(
+ValueError: The rewards returned by the environment contain NaN values. This usually indicates a bug in the environment's reward computation.
+[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
