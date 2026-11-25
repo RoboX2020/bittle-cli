@@ -64,7 +64,7 @@ Evaluated across `64` environments for `10 s` (`500` steps):
 - **Under Clean Physics:**
   - Step `499`: **`63 / 64` (98.4%)** both front legs planted, **`64 / 64` (100%)** rear legs airborne, mean `gy = 0.941`, **`42 / 64` (66%)** survived full 10 s.
 
-### Phase B: 1:1 Real-Scale IMU-Only + Knees-Off-Ground ([handstand_real_1x](../training/models/handstand_real_1x/))
+### Phase B: 1:1 Real-Scale IMU-Only + Knees-Off-Ground ([handstand_real_1x](https://github.com/RoboX2020/bittle-cli/tree/main/training/models/handstand_real_1x))
 Actively training (`train_handstand.sh --continuous --num_envs 2048 --max_iterations 1000000`):
 ```bash
 cd /home/robotics/isaac/bittle_training

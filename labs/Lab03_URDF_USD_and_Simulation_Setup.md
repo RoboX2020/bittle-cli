@@ -13,7 +13,7 @@ By the end of this lab, you will be able to:
 
 The repository includes the full URDF package from `Bittle-IsaacSim/Bittle_URDF`:
 - [bittle.urdf](../assets/urdf/urdf/bittle.urdf) and [bittle.stl](../assets/urdf/urdf/bittle.stl) (`16 MB`)
-- Low-poly `.obj` visual/collision meshes in [assets/urdf/meshes/obj/](../assets/urdf/meshes/obj/)
+- Low-poly `.obj` visual/collision meshes in [assets/urdf/meshes/obj/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/urdf/meshes/obj)
 - Reference joint locations ([joint_locs.txt](../assets/urdf/joint_locs.txt)) and Isaac Gym test script ([joint_monkey.py](../assets/urdf/joint_monkey.py))
 
 ### Coordinate Frame & Measured Masses

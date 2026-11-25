@@ -10,7 +10,7 @@ By the end of this lab, you will be able to:
 
 ## 1. Environment & Task Registration
 
-Task source files archived in [training/isaaclab_bittle_config/](../training/isaaclab_bittle_config/):
+Task source files archived in [training/isaaclab_bittle_config/](https://github.com/RoboX2020/bittle-cli/tree/main/training/isaaclab_bittle_config):
 - `__init__.py` — Registers `Isaac-Velocity-Flat-Bittle` and `Isaac-Velocity-Rough-Bittle`
 - `flat_env_cfg.py` & `rough_env_cfg.py` — Uses `assets/usd_10x/bittle.usd` (`_BITTLE_STANDING_HEIGHT = 0.58`, `pos = (0, 0, 0.62)`, `stiffness = 25.0`, `damping = 1.0`, `effort_limit = 15.0`, `action scale = 0.25`)
 - `agents/rsl_rl_ppo_cfg.py` — `BittleFlatPPORunnerCfg` (`[128, 128, 64]` ELU MLPs, `lr = 1e-3`, adaptive KL `0.01`, `gamma = 0.99`, `lam = 0.95`)
@@ -56,7 +56,7 @@ Three runs were executed on `2026-11-14`:
    - **`Episode_Termination/base_contact: 0.0000` (0 falls)**
    - `error_vel_xy: 0.2285`, `error_vel_yaw: 0.2583`, `feet_air_time: -0.0105`
 
-Archived artifacts in [training/models/locomotion_flat/](../training/models/locomotion_flat/):
+Archived artifacts in [training/models/locomotion_flat/](https://github.com/RoboX2020/bittle-cli/tree/main/training/models/locomotion_flat):
 - `bittle_policy_final.pt` (`735,925` bytes, SHA-256 `db95a6fdabaabcf22089a42e11c83b8f8178c38955d6f21970c82372270a8d5c`)
 - `exported/policy.pt` (`133,334` bytes TorchScript policy)
 - `params/{agent,env}.yaml`, `run.json`, and TensorBoard `events.out.tfevents.*`
