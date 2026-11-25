@@ -2,24 +2,35 @@
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
-[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+[train_handstand] Exited with code 1 at iter 1700; auto-resuming (800 remaining) in 3s...
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
-[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+[train_handstand] Exited with code 1 at iter 1800; auto-resuming (700 remaining) in 3s...
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
-[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+[train_handstand] Exited with code 1 at iter 1900; auto-resuming (600 remaining) in 3s...
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
-[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+[train_handstand] Exited with code 1 at iter 2000; auto-resuming (500 remaining) in 3s...
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
     raise ValueError(
 ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
-[train_handstand] Exited with code 1; auto-resuming from latest checkpoint in 3s...
+[train_handstand] Exited with code 1 at iter 2150; auto-resuming (350 remaining) in 3s...
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+[train_handstand] Exited with code 1 at iter 2300; auto-resuming (200 remaining) in 3s...
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+    raise ValueError(
+ValueError: The observation group 'policy' returned by the environment contains NaN values. This usually indicates a bug in the environment's step() or reset() function.
+[train_handstand] Exited with code 1 at iter 2450; auto-resuming (50 remaining) in 3s...
+[train_handstand] Completed cleanly.

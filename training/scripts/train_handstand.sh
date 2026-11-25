@@ -62,13 +62,24 @@ export LD_PRELOAD="/lib/aarch64-linux-gnu/libgomp.so.1${LD_PRELOAD:+:$LD_PRELOAD
 cd /home/robotics/isaac/IsaacLab
 
 if [[ "${CONTINUOUS}" -eq 1 ]]; then
-  while true; do
+  TARGET_ITERS="${MAX_ITERS}"
+  CUR_ITERS="${MAX_ITERS}"
+  # If starting from an explicit checkpoint, adjust initial iteration budget so total stops at TARGET_ITERS
+  for ((i=0; i<${#EXTRA_ARGS[@]}; i++)); do
+    if [[ "${EXTRA_ARGS[$i]}" == "--checkpoint" || "${EXTRA_ARGS[$i]}" == "-c" ]]; then
+      CKPT_VAL="${EXTRA_ARGS[$((i+1))]:-}"
+      if [[ "${CKPT_VAL}" =~ model_([0-9]+)\.pt$ ]]; then
+        CUR_ITERS=$(( TARGET_ITERS - BASH_REMATCH[1] ))
+      fi
+    fi
+  done
+  while (( CUR_ITERS > 0 )); do
     set +e
     uv run isaaclab train \
       --rl_library "${RL_LIB}" \
       --task "${TASK}" \
       --num_envs "${NUM_ENVS}" \
-      --max_iterations "${MAX_ITERS}" \
+      --max_iterations "${CUR_ITERS}" \
       "${EXTRA_ARGS[@]}"
     STATUS=$?
     set -e
@@ -76,8 +87,17 @@ if [[ "${CONTINUOUS}" -eq 1 ]]; then
       echo "[train_handstand] Completed cleanly."
       break
     fi
-    echo "[train_handstand] Exited with code ${STATUS}; auto-resuming from latest checkpoint in 3s..."
-    # Replace/set --checkpoint latest for subsequent resumes
+    LATEST_CKPT=$(ls -t /home/robotics/isaac/IsaacLab/logs/rsl_rl/bittle_handstand_real/*/model_*.pt 2>/dev/null | head -n 1 || true)
+    DONE_ITER=0
+    if [[ "${LATEST_CKPT}" =~ model_([0-9]+)\.pt$ ]]; then
+      DONE_ITER="${BASH_REMATCH[1]}"
+    fi
+    CUR_ITERS=$(( TARGET_ITERS - DONE_ITER ))
+    if (( CUR_ITERS <= 0 )); then
+      echo "[train_handstand] Reached target iterations (${DONE_ITER} >= ${TARGET_ITERS})."
+      break
+    fi
+    echo "[train_handstand] Exited with code ${STATUS} at iter ${DONE_ITER}; auto-resuming (${CUR_ITERS} remaining) in 3s..."
     NEW_ARGS=()
     SKIP_NEXT=0
     for arg in "${EXTRA_ARGS[@]}"; do

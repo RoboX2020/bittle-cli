@@ -18,16 +18,16 @@ if TYPE_CHECKING:
 
 def handstand_orientation_reward(
     env: ManagerBasedRLEnv,
-    std: float = 0.28,
+    std: float = 0.22,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     """Reward pitching forward into a vertical handstand (+Y_body pointing down)."""
     asset: Articulation = env.scene[asset_cfg.name]
     g_b = asset.data.projected_gravity_b.torch
     err_sq = torch.square(g_b[:, 0]) + torch.square(g_b[:, 1] - 1.0) + torch.square(g_b[:, 2])
-    coarse = torch.clamp((g_b[:, 1] + 0.2) / 1.2, min=0.0, max=1.0)
+    coarse = torch.clamp((g_b[:, 1] + 0.1) / 1.1, min=0.0, max=1.0)
     fine = torch.exp(-err_sq / (std * std))
-    return 0.25 * coarse + 0.75 * fine
+    return 0.20 * coarse + 0.80 * fine
 
 
 def handstand_height_reward(
@@ -67,10 +67,12 @@ def front_knees_elevated_reward(
     target_z: float = 0.045,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=".*_front_knee_link"),
 ) -> torch.Tensor:
-    """Reward keeping front knee joints elevated off the ground (standing on paw tips)."""
+    """Reward keeping front knee joints elevated off the ground, gated by pitch toward handstand."""
     asset: Articulation = env.scene[asset_cfg.name]
+    g_b = asset.data.projected_gravity_b.torch
+    pitch_gate = torch.clamp((g_b[:, 1] - 0.30) / 0.50, min=0.0, max=1.0)
     z_knees_min = asset.data.body_pos_w.torch[:, asset_cfg.body_ids, 2].min(dim=1)[0]
-    return torch.clamp((z_knees_min - min_z) / (target_z - min_z), min=0.0, max=1.0)
+    return pitch_gate * torch.clamp((z_knees_min - min_z) / (target_z - min_z), min=0.0, max=1.0)
 
 
 def front_knees_low_penalty(
@@ -104,8 +106,12 @@ def front_feet_support_reward(
     rear_sensor_cfg: SceneEntityCfg,
     shoulder_sensor_cfg: SceneEntityCfg,
     threshold: float = 0.02,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Reward front-paw support while rear legs and shoulder/knee housings have zero contact."""
+    """Reward front-paw support (rear & shoulders off floor), gated by pitch toward handstand."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    g_b = asset.data.projected_gravity_b.torch
+    pitch_gate = torch.clamp((g_b[:, 1] - 0.35) / 0.45, min=0.0, max=1.0)
     contact_sensor: ContactSensor = env.scene.sensors[front_sensor_cfg.name]
     forces = contact_sensor.data.net_normal_forces_w_history.torch.norm(dim=-1).max(dim=1)[0]
     front_on = forces[:, front_sensor_cfg.body_ids] > threshold
@@ -113,7 +119,7 @@ def front_feet_support_reward(
     no_shoulder = (forces[:, shoulder_sensor_cfg.body_ids] <= threshold).all(dim=1).float()
     front_frac = front_on.float().mean(dim=1)
     both_front = front_on.all(dim=1).float()
-    return no_rear * no_shoulder * (0.4 * front_frac + 0.6 * both_front)
+    return pitch_gate * no_rear * no_shoulder * (0.4 * front_frac + 0.6 * both_front)
 
 
 def handstand_hold_bonus(

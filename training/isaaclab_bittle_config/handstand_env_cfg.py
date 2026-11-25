@@ -3,7 +3,7 @@
 
 """1:1 Real-Scale Petoi Bittle X handstand environment (IMU-deployable actor + max DR + knees off ground)."""
 
-from isaaclab.actuators import DelayedPDActuatorCfg
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -50,14 +50,12 @@ BITTLE_REAL_CFG = ArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": DelayedPDActuatorCfg(
+        "legs": ImplicitActuatorCfg(
             joint_names_expr=[".*_shoulder_joint", ".*_knee_joint"],
             effort_limit=0.35,
             velocity_limit=6.1,
             stiffness=2.0,
             damping=0.08,
-            min_delay=4,  # 20 ms at dt=0.005
-            max_delay=8,  # 40 ms at dt=0.005 (matches real P1S servo + USB lag)
         ),
     },
 )
@@ -180,14 +178,14 @@ class HandstandEventsCfg:
         },
     )
 
-    # 6. Joint friction & real-scale armature randomization
+    # 6. Joint friction & real-scale geared-servo armature randomization (prevents explicit PD ringing)
     joint_params = EventTerm(
         func=mdp.randomize_joint_parameters,
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=".*"),
             "friction_distribution_params": (0.0, 0.015),
-            "armature_distribution_params": (0.0002, 0.001),
+            "armature_distribution_params": (0.0015, 0.004),
             "operation": "abs",
             "distribution": "uniform",
         },
@@ -272,17 +270,17 @@ class HandstandRewardsCfg:
 
     handstand_orientation = RewTerm(
         func=handstand_mdp.handstand_orientation_reward,
-        weight=5.0,
-        params={"std": 0.28},
+        weight=8.0,
+        params={"std": 0.22},
     )
     handstand_height = RewTerm(
         func=handstand_mdp.handstand_height_reward,
-        weight=2.5,
-        params={"target_height": 0.105, "min_height": 0.055, "std": 0.025},
+        weight=3.5,
+        params={"target_height": 0.100, "min_height": 0.055, "std": 0.025},
     )
     rear_above_base = RewTerm(
         func=handstand_mdp.rear_above_base_reward,
-        weight=3.5,
+        weight=3.0,
         params={
             "min_rel_z": -0.025,
             "target_rel_z": 0.055,
@@ -318,14 +316,14 @@ class HandstandRewardsCfg:
     )
     handstand_hold = RewTerm(
         func=handstand_mdp.handstand_hold_bonus,
-        weight=10.0,
+        weight=15.0,
         params={
             "front_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_front_knee_link"),
             "rear_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_back_knee_link"),
             "shoulder_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_shoulder_link"),
             "front_knee_cfg": SceneEntityCfg("robot", body_names=".*_front_knee_link"),
-            "min_gy": 0.85,
-            "min_z": 0.075,
+            "min_gy": 0.82,
+            "min_z": 0.070,
             "max_z": 0.145,
             "min_knee_z": 0.030,
             "threshold": 0.02,
@@ -357,7 +355,7 @@ class HandstandRewardsCfg:
             "threshold": 0.02,
         },
     )
-    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-100.0)
+    termination_penalty = RewTerm(func=mdp.is_terminated, weight=-30.0)
     dof_torques_l2 = RewTerm(func=mdp.joint_torques_l2, weight=-1.0e-3)
     dof_acc_l2 = RewTerm(func=mdp.joint_acc_l2, weight=-2.5e-7)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.005)
@@ -371,8 +369,8 @@ class HandstandRewardsCfg:
             "rear_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_back_knee_link"),
             "shoulder_sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_shoulder_link"),
             "front_knee_cfg": SceneEntityCfg("robot", body_names=".*_front_knee_link"),
-            "min_gy": 0.85,
-            "min_z": 0.075,
+            "min_gy": 0.82,
+            "min_z": 0.070,
             "max_z": 0.145,
             "min_knee_z": 0.030,
             "threshold": 0.02,
@@ -419,8 +417,8 @@ class BittleHandstandEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # Tune Newton MJWarp solver & contact stiffness for 1:1 0.271 kg Bittle
         self.sim.physics.newton_mjwarp.num_substeps = 4
-        self.sim.physics.newton_mjwarp.default_shape_cfg.ke = 2500.0
-        self.sim.physics.newton_mjwarp.default_shape_cfg.kd = 80.0
+        self.sim.physics.newton_mjwarp.default_shape_cfg.ke = 1200.0
+        self.sim.physics.newton_mjwarp.default_shape_cfg.kd = 50.0
         self.sim.physics.newton_mjwarp.solver_cfg.njmax = 1000
         self.sim.physics.newton_mjwarp.solver_cfg.nconmax = 300
         self.sim.physics.newton_mjwarp.solver_cfg.iterations = 100

@@ -55,8 +55,8 @@ class BittleHandstandPPORunnerCfg(BittleRoughPPORunnerCfg):
     def __post_init__(self):
         super().__post_init__()
 
-        self.max_iterations = 50000
-        self.save_interval = 100
+        self.max_iterations = 2500
+        self.save_interval = 50
         self.experiment_name = "bittle_handstand_real"
         self.obs_groups = {"actor": ["policy"], "critic": ["critic"]}
         self.clip_actions = 4.0
