@@ -124,6 +124,40 @@ def action_to_opencat_8(act: np.ndarray) -> list[int]:
     return [oc_map[ch] for ch in range(8, 16)]
 
 
+def build_ff_light_push(kick_speed: int = 24, hold_ms: int = 800) -> list[int]:
+    """Build 6-frame OpenCat K skill array modeled on InstinctBittle.h `ff` with a light push."""
+    spd = max(4, min(64, int(kick_speed)))
+    hold_ticks = max(1, min(60, int(round(hold_ms / 50.0))))
+    frames = [
+        # Frame 0-1: exact InstinctBittle.h `ff` forward lean onto head (-80) + front tuck (48, 102)
+        [-80, 0, 0, 0, 0, 0, 0, 0, 22, 22, 30, 30, 86, 86, 30, 30, 8, 0, 0, 0],
+        [-80, 0, 0, 0, 0, 0, 0, 0, 48, 48, 30, 30, 102, 102, 30, 30, 8, 2, 0, 0],
+        # Frame 2: controlled light push off hind legs, raising rear while planting front paws (knees off ground)
+        [-50, 0, 0, 0, 0, 0, 0, 0, 15, 15, 85, 85, 30, 30, -5, -5, spd, 0, 0, 0],
+        # Frame 3: top handstand pose with knees clear of floor
+        [-25, 0, 0, 0, 0, 0, 0, 0, 45, 45, 100, 100, 15, 15, 25, 25, 16, hold_ticks, 0, 0],
+        # Frame 4-5: tuck & recover onto four legs (from ff)
+        [10, -80, -45, 0, -3, -3, 3, 3, 70, 70, 70, 70, -55, -55, -55, -55, 16, 2, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 30, 30, 30, 30, 30, 30, 30, 30, 8, 4, 0, 0],
+    ]
+    return [-len(frames), 0, 0, 1, 0, 0, 0] + [x for f in frames for x in f]
+
+
+def disable_nyboard_gyro(ser: serial.Serial) -> str:
+    """Turn NyBoard gyroBalanceQ OFF cleanly using 'G~' and return confirmation."""
+    ser.write(b"kup\n")
+    time.sleep(1.0)
+    _ = ser.read(ser.in_waiting or 512)
+    ser.write(b"G~")
+    time.sleep(0.25)
+    reply = ser.read(ser.in_waiting or 256).decode(errors="replace").strip()
+    if "G" in reply and "g" not in reply:
+        ser.write(b"G~")
+        time.sleep(0.25)
+        reply = ser.read(ser.in_waiting or 256).decode(errors="replace").strip()
+    return reply
+
+
 def wait_for_ready(ser: serial.Serial, timeout: float = 8.0) -> str:
     t0 = time.monotonic()
     buf = ""
@@ -162,8 +196,10 @@ def main():
     ap.add_argument("--port", default="/dev/ttyUSB0")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--policy", type=Path, default=Path(DEFAULT_POLICY))
-    ap.add_argument("--mode", choices=["pose-test", "dry-run", "live", "replay"], required=True)
+    ap.add_argument("--mode", choices=["pose-test", "dry-run", "live", "replay", "ff-push"], required=True)
     ap.add_argument("--traj", type=Path, default=Path(__file__).resolve().parent / "training" / "rl_handstand_traj_50hz.npy")
+    ap.add_argument("--kick-speed", type=int, default=24, help="Kick frame speed (0..125, ff uses 48; lower=lighter)")
+    ap.add_argument("--hold-ms", type=int, default=800, help="Peak handstand hold time in ms for ff-push")
     ap.add_argument("--duration", type=float, default=10.0, help="Seconds for dry-run or live rollout")
     ap.add_argument("--catch", action="store_true", default=True, help="Auto four-leg catch (kup) if rolled/flipped")
     ap.add_argument("--no-catch", action="store_false", dest="catch")
@@ -192,21 +228,39 @@ def main():
             time.sleep(0.5)
             return
 
+        if args.mode == "ff-push":
+            arr = build_ff_light_push(args.kick_speed, args.hold_ms)
+            g_reply = disable_nyboard_gyro(ser)
+            print(
+                f"[deploy] ff-push (kick_speed={args.kick_speed}, hold={args.hold_ms}ms, "
+                f"gyro={g_reply!r}, {len(arr)} ints)..."
+            )
+            payload = b"K" + bytes(v & 0xFF for v in arr) + b"~"
+            ser.reset_input_buffer()
+            for i in range(0, len(payload), 20):
+                ser.write(payload[i : i + 20])
+                time.sleep(0.005)
+            t_wait = time.monotonic()
+            rx = ""
+            while time.monotonic() - t_wait < 6.5:
+                d = ser.read(256).decode(errors="replace")
+                if d:
+                    rx += d
+                    if "k" in rx:
+                        break
+                time.sleep(0.05)
+            time.sleep(0.3)
+            ser.write(b"d\n")
+            time.sleep(0.3)
+            rx += ser.read(ser.in_waiting or 256).decode(errors="replace")
+            print(f"[deploy] ff-push finished, rested ('d'). robot_rx={rx!r}")
+            return
+
         if args.mode == "replay":
             traj = np.load(str(args.traj))
             print(f"[deploy] Replaying {len(traj)} open-loop RL frames (stock 'I' binary @ 25Hz) from {args.traj} ...")
-            ser.write(b"kup\n")
-            time.sleep(1.2)
-            _ = ser.read(ser.in_waiting or 512)
-            # Ensure stock gyroBalanceQ is OFF so self-righting ('rc') does not abort handstand
-            ser.write(b"G~")
-            time.sleep(0.25)
-            g_reply = ser.read(ser.in_waiting or 256).decode(errors="replace")
-            if "G" in g_reply and "g" not in g_reply:
-                ser.write(b"G~")
-                time.sleep(0.25)
-                g_reply = ser.read(ser.in_waiting or 256).decode(errors="replace")
-            print(f"[deploy] Gyro toggle state: {g_reply.strip()!r}")
+            g_reply = disable_nyboard_gyro(ser)
+            print(f"[deploy] Gyro toggle state: {g_reply!r}")
 
             t0 = time.monotonic()
             for idx, row in enumerate(traj):
