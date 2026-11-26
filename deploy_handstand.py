@@ -194,13 +194,23 @@ def main():
 
         if args.mode == "replay":
             traj = np.load(str(args.traj))
-            print(f"[deploy] Replaying {len(traj)} open-loop RL frames (stock 'I' binary) from {args.traj} ...")
+            print(f"[deploy] Replaying {len(traj)} open-loop RL frames (stock 'I' binary @ 25Hz) from {args.traj} ...")
             ser.write(b"kup\n")
-            time.sleep(1.0)
-            ser.read(512)
+            time.sleep(1.2)
+            _ = ser.read(ser.in_waiting or 512)
+            # Ensure stock gyroBalanceQ is OFF so self-righting ('rc') does not abort handstand
+            ser.write(b"G~")
+            time.sleep(0.25)
+            g_reply = ser.read(ser.in_waiting or 256).decode(errors="replace")
+            if "G" in g_reply and "g" not in g_reply:
+                ser.write(b"G~")
+                time.sleep(0.25)
+                g_reply = ser.read(ser.in_waiting or 256).decode(errors="replace")
+            print(f"[deploy] Gyro toggle state: {g_reply.strip()!r}")
+
             t0 = time.monotonic()
             for idx, row in enumerate(traj):
-                target_t = t0 + idx * 0.04  # 25 Hz safe playback over stock serial
+                target_t = t0 + idx * 0.04  # 25 Hz playback over stock serial
                 payload = bytearray(b"I")
                 for ch_offset, deg in enumerate(row):
                     val = max(-125, min(125, int(deg)))
@@ -208,12 +218,21 @@ def main():
                     payload.append(val & 0xFF)
                 payload.append(ord("~"))
                 ser.write(payload)
+                if ser.in_waiting:
+                    _ = ser.read(ser.in_waiting)
+                if idx % 10 == 0 or idx == len(traj) - 1:
+                    print(f"\r[replay] frame {idx+1:3d}/{len(traj)} t={idx*0.04:4.2f}s ch8..15={row.tolist()}", end="", flush=True)
                 dt = target_t - time.monotonic()
                 if dt > 0:
                     time.sleep(dt)
-            time.sleep(0.3)
+            print()
+            time.sleep(0.4)
+            ser.write(b"kup\n")
+            time.sleep(1.0)
             ser.write(b"d\n")
-            print("[deploy] Replay complete, rested servos ('d').")
+            time.sleep(0.3)
+            tail_rx = ser.read(ser.in_waiting or 512).decode(errors="replace")
+            print(f"[deploy] Replay complete, returned to stand & rested ('d'). tail_rx={tail_rx!r}")
             return
 
         if args.mode == "live":
