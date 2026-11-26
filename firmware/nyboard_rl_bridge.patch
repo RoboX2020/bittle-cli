@@ -1,0 +1,188 @@
+diff --git a/OpenCat.ino b/OpenCat.ino
+index deb2907..378e738 100644
+--- a/OpenCat.ino
++++ b/OpenCat.ino
+@@ -80,7 +80,7 @@
+ // #define OTHER_MODULES  //uncomment this line to disable the gyroscope code to save programming resources for other modules.
+ // #define ROBOT_ARM
+ 
+-#define IR_PIN 4  // Signal Pin of IR receiver to Arduino Digital Pin 4
++// #define IR_PIN 4  // Disabled for 50Hz USB RL handstand bridge (frees ~1.5KB flash)
+ #include "src/OpenCat.h"
+ 
+ void setup() {
+diff --git a/src/OpenCat.h b/src/OpenCat.h
+index 1357292..128c0b0 100644
+--- a/src/OpenCat.h
++++ b/src/OpenCat.h
+@@ -240,6 +240,8 @@ byte pwm_pin[] = { 12, 11, 4, 3,
+ // #define T_DECELERATE  ','
+ #define T_RANDOM_MIND 'z'  //toggle random behaviors in the RANDOM_MIND mode
+ #define T_QUERY '?'
++#define T_RL_STREAM 'y'             //y0=RL pose, y1=50Hz binary IMU stream, yx=stop stream
++#define T_RL_ACT_BIN 'U'            //U + 8 int8 angles for joints 8..15 + '~'
+ 
+ #ifdef GROVE_SERIAL_PASS_THROUGH
+ #define T_READ 'R'        //read pin     R
+@@ -398,8 +400,7 @@ float protectiveShift;  //reduce the wearing of the potentiometer
+ 
+ #else
+ 
+-#define TASK_QUEUE  //allow executing a sequence of tasks, if you enabled the other modules, the task queue will be automatically enabled. \
+-  // because it takes up memory, it should be disabled if the GYRO is enabled. See "#undef TASK_QUEUE" under ifdef GYRO
++// #define TASK_QUEUE  //allow executing a sequence of tasks
+ #ifdef TASK_QUEUE
+ #include "taskQueue.h"
+ #define T_TASK_QUEUE 'q'
+diff --git a/src/imu.h b/src/imu.h
+index 2ae7d76..db8fe66 100644
+--- a/src/imu.h
++++ b/src/imu.h
+@@ -146,6 +146,8 @@ float ypr[3];         // [yaw, pitch, roll]   yaw/pitch/roll container and gravi
+ #define IMU_SKIP 3
+ #define IMU_SKIP_MORE 23  //use prime number to avoid repeatly skipping the same joint
+ byte imuSkip = IMU_SKIP;
++bool rlStreamQ = false;
++unsigned long lastRlMs = 0;
+ int16_t imuOffset[9] = { 0, 0, 0,
+                          0, 0, 0,
+                          0, 0, 0 };
+@@ -200,6 +202,19 @@ bool read_IMU() {
+ #endif
+     mpu.dmpGetGravity(&gravity, &q);
+     mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
++    if (rlStreamQ && (millis() - lastRlMs >= 20)) {
++      lastRlMs = millis();
++      mpu.dmpGetGyro(&gy, fifoBuffer);
++      int16_t pkt[6] = {
++        int16_t(gravity.x * 10000.0f),
++        int16_t(gravity.y * 10000.0f),
++        int16_t(gravity.z * 10000.0f),
++        gy.x, gy.y, gy.z
++      };
++      Serial.write(0xAA);
++      Serial.write(0x55);
++      Serial.write((const uint8_t *)pkt, 12);
++    }
+ 
+ 
+     for (int i = 0; i < 3; i++)
+@@ -230,7 +245,7 @@ bool read_IMU() {
+ }
+ 
+ void readEnvironment() {
+-  if (gyroBalanceQ && !(frame % imuSkip))
++  if ((gyroBalanceQ && !(frame % imuSkip)) || rlStreamQ)
+     read_IMU();
+ }
+ 
+diff --git a/src/reaction.h b/src/reaction.h
+index ebf6c8f..dcf803c 100644
+--- a/src/reaction.h
++++ b/src/reaction.h
+@@ -66,8 +66,9 @@ void reaction() {
+         && token != T_MEOW
+ #endif
+ #ifdef BINARY_COMMAND
+-        && token != T_LISTED_BIN && token != T_INDEXED_SIMULTANEOUS_BIN
++        && token != T_LISTED_BIN && token != T_INDEXED_SIMULTANEOUS_BIN && token != T_RL_ACT_BIN
+ #endif
++        && token != T_RL_STREAM
+ #ifdef GROVE_SERIAL_PASS_THROUGH
+         && token != T_READ && token != T_WRITE
+ #endif
+@@ -431,6 +432,14 @@ void reaction() {
+           break;
+         }
+ #ifdef BINARY_COMMAND
++      case T_RL_ACT_BIN:
++        {
++          if (cmdLen >= 8) {
++            for (byte j = 0; j < 8; j++)
++              calibratedPWM(8 + j, (int8_t)newCmd[j]);
++          }
++          break;
++        }
+       case T_LISTED_BIN:
+         {
+           // PTL(token);                                      //make real-time motion instructions more timely
+@@ -495,8 +504,28 @@ void reaction() {
+         //   }
+ 
+ #endif
++      case T_RL_STREAM:
++        {
++          gyroBalanceQ = false;
++#ifdef T_SERVO_MICROSECOND
++          setServoP(P_HARD);
++          hardServoQ = true;
++#endif
++          if (newCmd[0] == '0') {
++            rlStreamQ = false;
++            int rlPose[DOF] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 23, 23, 23 };
++            transform(rlPose, 1, 2);
++          } else if (newCmd[0] == '1') {
++            rlStreamQ = true;
++            lastRlMs = 0;
++          } else {
++            rlStreamQ = false;
++          }
++          break;
++        }
+       case T_REST:
+         {
++          rlStreamQ = false;
+           strcpy(newCmd, "rest");
+           skill.loadFrame(newCmd);
+           pwm.shutServos();
+@@ -508,7 +537,7 @@ void reaction() {
+       default:
+         break;
+     }
+-    if (token != T_SKILL || skill.period > 0) {
++    if (token != T_RL_ACT_BIN && (token != T_SKILL || skill.period > 0)) {
+       PTL(token);  //postures, gaits, and other tokens can confirm completion by sending the token back
+       if (lastToken == T_SKILL
+           && (token == T_JOINTS || token == T_PAUSE || lowerToken == T_GYRO_FINENESS || lowerToken == T_INDEXED_SIMULTANEOUS_ASC || lowerToken == T_INDEXED_SEQUENTIAL_ASC
+diff --git a/src/skill.h b/src/skill.h
+index 9b94501..3832ecb 100644
+--- a/src/skill.h
++++ b/src/skill.h
+@@ -141,27 +141,28 @@ public:
+ 
+   void assignSkillAddressToOnboardEeprom() {
+     int skillAddressShift = 0;
++    byte nSkills = eeprom(NUM_SKILLS);
++    byte visited = 0;
+     PTLF("Skill");
+     for (byte s = 0; s < sizeof(progmemPointer) / 2; s++) {  //save skill info to on-board EEPROM, load skills to SkillList
+-      //        PTL(s);
++      if (visited >= nSkills || SKILLS + skillAddressShift + 4 >= 960)
++        break;
+       byte nameLen = EEPROM.read(SKILLS + skillAddressShift++);  //without last type character
+-      //    for (int n = 0; n < nameLen; n++)
+-      //      PT((char)EEPROM.read(SKILLS + skillAddressShift + n));
++      if (nameLen == 0 || nameLen > 16)
++        break;
+       skillAddressShift += nameLen;
+       char skillType = EEPROM.read(SKILLS + skillAddressShift++);
+-      //    PT(skillType);
+-      //    PT('\t');
+-      //    PTL((int8_t)EEPROM.read(SKILLS + skillAddressShift));
+ #ifdef I2C_EEPROM
+       if (skillType == 'N')  // the address of I(nstinct) has been written in previous operation: saveSkillNameFromProgmemToOnboardEEPROM() in instinct.ino
+-                             // if skillType == N(ewbility), save pointer address of progmem data array to onboard eeprom.
+-                             // it has to be done for different sketches because the addresses are dynamically assigned
+ #endif
+         EEPROMWriteInt(SKILLS + skillAddressShift + 1, (int)progmemPointer[s]);
+ #if defined(I2C_EEPROM) && defined(MAIN_SKETCH)
+-      else
++      else if (skillType == 'I')
+         s--;
++      else
++        break;
+ #endif
++      visited++;
+       skillAddressShift += 3;
+     }
+     //  PTLF("Load finished!");

@@ -53,7 +53,7 @@ def export_header(ckpt_path: Path, out_path: Path) -> dict[str, np.ndarray]:
 
     arrays = {
         "RL_OBS_MEAN": sd["obs_normalizer._mean"].squeeze(0).cpu().numpy(),
-        "RL_OBS_STD": sd["obs_normalizer._std"].squeeze(0).cpu().numpy(),
+        "RL_OBS_STD": (sd["obs_normalizer._std"] + 1.0e-2).squeeze(0).cpu().numpy(),
         "RL_W0": sd["mlp.0.weight"].cpu().numpy(),
         "RL_B0": sd["mlp.0.bias"].cpu().numpy(),
         "RL_W2": sd["mlp.2.weight"].cpu().numpy(),
@@ -105,7 +105,7 @@ def verify_cpp_parity(ckpt_path: Path, weights_header: Path) -> None:
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
     sd = ckpt["actor_state_dict"]
     mean = sd["obs_normalizer._mean"]
-    std = sd["obs_normalizer._std"]
+    std = sd["obs_normalizer._std"] + 1.0e-2
     w0, b0 = sd["mlp.0.weight"], sd["mlp.0.bias"]
     w2, b2 = sd["mlp.2.weight"], sd["mlp.2.bias"]
     w4, b4 = sd["mlp.4.weight"], sd["mlp.4.bias"]
