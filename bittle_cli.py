@@ -344,15 +344,21 @@ async def find_ble(target=None, timeout=6.0):
         from bleak import BleakScanner
         found = await BleakScanner.discover(timeout=timeout, return_adv=True)
         robots = []
+        fallback_robots = []
         for dev, adv in found.values():
             name = dev.name or adv.local_name or ""
             adv_uuids = [u.lower() for u in adv.service_uuids]
             uart = any(s in u for s in ["ffe0", "6e40"] for u in adv_uuids)
-            if target and target.lower() not in (name.lower(), dev.address.lower()) and target.lower() not in name.lower():
-                continue
-            if target or uart or name.endswith("_BLE") or "ble" in name.lower() or "bittle" in name.lower() or "petoi" in name.lower():
+            if target:
+                if target.lower() in name.lower() or target.lower() in dev.address.lower():
+                    robots.append(dev)
+            elif "bittle" in name.lower() or "petoi" in name.lower():
                 robots.append(dev)
-        return robots[0] if robots else None
+            elif uart or name.endswith("_BLE") or "ble" in name.lower():
+                fallback_robots.append(dev)
+        if robots:
+            return robots[0]
+        return fallback_robots[0] if fallback_robots else None
     except Exception as e:
         print(f"Bluetooth error: {e}")
         return None
@@ -475,6 +481,9 @@ STAND_HELP = """\
   stand sign +1|-1 / stand mix M / stand limit LIM FALL / stand catch 0|1
   stand watch SECS [FILE]   live tilt display; FILE saves a CSV
   stand laptop KP KI KD SECS   run the PID on this computer instead (USB or BLE)
+  stand rl-pose             move smoothly to the RL standing pose (y0)
+  stand rl-dry [N]          dry-run onboard 50 Hz RL telemetry without moving servos (yS)
+  stand rl [N]              run onboard 50 Hz RL handstand policy on BiBoard (yR)
   stand show / stand stop"""
 
 
@@ -488,6 +497,9 @@ class Telemetry:
         self.events = []
 
     def __call__(self, text):
+        if text.startswith("#RL "):
+            print(f"  {text}")
+            return
         if not text.startswith("#B "):
             return
         parts = text.split()
@@ -599,16 +611,18 @@ async def stand_laptop(runner, kp, ki, kd, secs, sign=1.0, limit=30.0):
 
 async def stand(runner, args):
     sub, rest = (args[0], args[1:]) if args else ("help", [])
-    simple = {"hand": "yh", "rear": "yr", "here": "yg", "stop": "yx", "zero": "yz", "show": "y?"}
+    simple = {"hand": "yh", "rear": "yr", "here": "yg", "stop": "yx", "zero": "yz", "show": "y?",
+              "rl-pose": "y0", "rl-dry": "yS", "rl": "yR"}
     with_args = {"pose": "yb", "gains": "yp", "sign": "ys", "mix": "ym", "limit": "yl", "catch": "yc"}
     if sub in simple:
-        if sub in ("hand", "rear"):
+        if sub in ("hand", "rear", "rl"):
             print("  going up... (any other command, or a fall, ends the stand)")
+        cmd_str = simple[sub] + (f" {rest[0]}" if sub in ("rl", "rl-dry") and rest else "")
         tel = Telemetry(runner.link)
         if hasattr(runner.link, "listeners"):
             runner.link.listeners.append(tel)
         try:
-            await runner.raw(simple[sub], timeout=20)
+            await runner.raw(cmd_str, timeout=20)
         finally:
             if hasattr(runner.link, "listeners"):
                 runner.link.listeners.remove(tel)

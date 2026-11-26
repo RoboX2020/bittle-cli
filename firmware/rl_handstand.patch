@@ -1,0 +1,168 @@
+diff --git a/OpenCatEsp32.ino b/OpenCatEsp32.ino
+index 2840aea..04f75a5 100644
+--- a/OpenCatEsp32.ino
++++ b/OpenCatEsp32.ino
+@@ -24,7 +24,7 @@
+ #define DOUBLE_LIGHT              // for double light sensor
+ #define DOUBLE_INFRARED_DISTANCE  // for double distance sensor
+ #define GESTURE                   // for Gesture module
+-#define CAMERA                    // for Mu Vision camera
++// #define CAMERA                    // for Mu Vision camera
+ #define QUICK_DEMO                // for quick demo
+ // #define ROBOT_ARM                 // for attaching head clip arm
+ #include "src/OpenCat.h"
+@@ -102,6 +102,9 @@ void loop() {
+   playLight();
+ #endif
+   reaction();
++#ifdef GYRO_PIN
++  balanceLoop();  // two-leg stand & onboard RL handstand tick (no-op unless started with 'y')
++#endif
+ 
+ #ifdef WEB_SERVER
+   WebServerLoop();  // Handle asynchronous Web requests
+diff --git a/src/OpenCat.h b/src/OpenCat.h
+index 82f5bc1..c324cf7 100644
+--- a/src/OpenCat.h
++++ b/src/OpenCat.h
+@@ -644,6 +644,9 @@ int balanceSlope[2] = {1, 1};  // roll, pitch
+ #include "randomMind.h"
+ #include "skill.h"
+ #include "moduleManager.h"
++#ifdef GYRO_PIN
++#include "balanceStand.h"  // closed-loop handstand / rear stand & onboard RL handstand, token 'y'
++#endif
+ #ifdef WEB_SERVER
+ #include "webServer.h"
+ #endif
+diff --git a/src/icm42670/petoi_icm42670p.h b/src/icm42670/petoi_icm42670p.h
+index 9cfe8b5..a05abd7 100644
+--- a/src/icm42670/petoi_icm42670p.h
++++ b/src/icm42670/petoi_icm42670p.h
+@@ -41,6 +41,12 @@ public:
+   // fusion functio
+   void MadgwickQuaternionUpdate(float ax, float ay, float az, float gyrox, float gyroy, float gyroz, float deltaT);
+ 
++  inline void getWorldUp(float up[3]) const {
++    up[0] = 2.0f * (q[1] * q[3] - q[0] * q[2]);
++    up[1] = 2.0f * (q[0] * q[1] + q[2] * q[3]);
++    up[2] = q[0] * q[0] - q[1] * q[1] - q[2] * q[2] + q[3] * q[3];
++  }
++
+ private:
+   uint32_t now = 0;
+   float deltaT = 0.0;
+diff --git a/src/imu.h b/src/imu.h
+index 97bfba5..8d9873c 100644
+--- a/src/imu.h
++++ b/src/imu.h
+@@ -5,6 +5,8 @@
+ bool calibrateQ = false;
+ float ypr[3];
+ float previous_ypr[3];
++float imuGyroRad[3] = {0.0f, 0.0f, 0.0f};
++float imuWorldUp[3] = {0.0f, 0.0f, 1.0f};
+ 
+ // Turning control variables
+ bool turningQ = false;           // Turning control switch
+@@ -173,6 +175,8 @@ public:
+   int16_t *xyzReal[3] = {&aaReal.x, &aaReal.y, &aaReal.z};
+   float ypr[3];     // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector. unit is radian
+   float a_real[3];  // [x, y, z]            gravity vector in the real world
++  float gyro_rads[3] = {0.0f, 0.0f, 0.0f};
++  float grav_up[3] = {0.0f, 0.0f, 1.0f};
+ 
+   // packet structure for InvenSense teapot demo
+   uint8_t teapotPacket[14] = {'$', 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, '\r', '\n'};
+@@ -245,12 +249,28 @@ public:
+       // display Euler angles in degrees
+       dmpGetQuaternion(&q, fifoBuffer);
+       dmpGetAccel(&aa, fifoBuffer);
++      dmpGetGyro(&gy, fifoBuffer);
+       dmpGetEuler(euler, &q);
+       dmpGetGravity(&gravity, &q);
+       dmpGetYawPitchRoll(ypr, &q, &gravity);
+       dmpGetLinearAccel(&aaReal, &aa, &gravity);
+       dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
+ 
++      const float kGyroLsb = 16.4f;
++      const float kDegToRad = 0.017453292519943295f;
++      gyro_rads[0] = (gy.x / kGyroLsb) * kDegToRad;
++      gyro_rads[1] = (gy.y / kGyroLsb) * kDegToRad;
++      gyro_rads[2] = (gy.z / kGyroLsb) * kDegToRad;
++      grav_up[0] = gravity.x;
++      grav_up[1] = gravity.y;
++      grav_up[2] = gravity.z;
++#ifdef BiBoard_V0_1
++      gyro_rads[0] = -gyro_rads[0];
++      gyro_rads[1] = -gyro_rads[1];
++      grav_up[0] = -grav_up[0];
++      grav_up[1] = -grav_up[1];
++#endif
++
+       for (byte i = 0; i < 3; i++) {  // no need to flip yaw
+         ypr[i] *= degPerRad;
+         a_real[i] = *xyzReal[i] / 8192.0 * GRAVITY;
+@@ -703,6 +723,11 @@ bool readIMU() {
+         xyzReal[i] = icm.a_real[i] * GRAVITY;
+         ypr[i] = icm.ypr[i];
+       }
++      const float kDegToRad = 0.017453292519943295f;
++      imuGyroRad[0] = icm.gx_real * kDegToRad;
++      imuGyroRad[1] = icm.gy_real * kDegToRad;
++      imuGyroRad[2] = icm.gz_real * kDegToRad;
++      icm.getWorldUp(imuWorldUp);
+       // Negate yaw to match polar coordinate convention (positive = counterclockwise)
+       ypr[0] = -ypr[0];
+     }
+@@ -720,6 +745,8 @@ bool readIMU() {
+         for (byte i = 0; i < 3; i++) {
+           xyzReal[i] = mpu.a_real[i];
+           ypr[i] = mpu.ypr[i];
++          imuGyroRad[i] = mpu.gyro_rads[i];
++          imuWorldUp[i] = mpu.grav_up[i];
+         }
+         // Negate yaw to match polar coordinate convention (positive = counterclockwise)
+         ypr[0] = -ypr[0];
+diff --git a/src/reaction.h b/src/reaction.h
+index 9977996..11e2e36 100644
+--- a/src/reaction.h
++++ b/src/reaction.h
+@@ -342,6 +342,10 @@ void reaction() {  // Reminder:  reaction() is repeatedly called in the "forever
+   if (newCmdIdx) {
+     // PTLF("-----");
+     lowerToken = tolower(token);
++#ifdef GYRO_PIN
++    if (token != T_BALANCE_STAND)
++      standStop("cmd");
++#endif
+     if (initialBoot) {  //-1 for marking the boot-up calibration state
+       fineAdjustQ = true;
+       // updateGyroQ = true;
+@@ -357,7 +361,11 @@ void reaction() {  // Reminder:  reaction() is repeatedly called in the "forever
+       idleTimer = millis();
+     if (newCmdIdx < 5 && lowerToken != T_BEEP && token != T_MEOW && token != T_LISTED_BIN
+         && token != T_INDEXED_SIMULTANEOUS_BIN && token != T_TILT && token != T_READ && token != T_WRITE
+-        && token != T_JOYSTICK && token != T_EXTENSION)
++        && token != T_JOYSTICK && token != T_EXTENSION
++#ifdef GYRO_PIN
++        && token != T_BALANCE_STAND
++#endif
++        )
+       beep(15 + newCmdIdx, 5);  // ToDo: check the muted sound when newCmdIdx = -1
+     if (!workingStiffness
+         && (lowerToken == T_SKILL || lowerToken == T_INDEXED_SEQUENTIAL_ASC
+@@ -1554,6 +1562,13 @@ void reaction() {  // Reminder:  reaction() is repeatedly called in the "forever
+                                  // 10 4 0, 15 10 0 4 0:100>
+           break;
+         }
++#ifdef GYRO_PIN
++      case T_BALANCE_STAND:
++        {
++          standCommand(newCmd);
++          break;
++        }
++#endif
+       default:
+         {
+           // Keep malformed-input diagnostics on the USB debug port.  Sending

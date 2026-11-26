@@ -27,10 +27,14 @@
 //   yt N          telemetry every N control ticks (0 = off). Lines: "#B ms pitch err u roll"
 //   ye 0|1        external control: the laptop sends the correction with yu instead of the PID
 //   yu U          external correction in degrees (only while ye 1)
+//   y0            smoothly move into the RL standing pose (0 deg shoulders, +23 deg knees)
+//   yS [N]        dry-run RL telemetry every N 50 Hz ticks (reads IMU & prints 8 targets without moving)
+//   yR            run onboard 50 Hz RL handstand policy (rlHandstand.h)
 //   y?            print every parameter
 #pragma once
 #include <math.h>
 #include <stdio.h>
+#include "rlHandstand.h"
 
 #define T_BALANCE_STAND 'y'
 
@@ -66,7 +70,7 @@ struct StandPID {
 
 #ifndef BALANCE_STAND_HOST_TEST  // ---------------------------------------- firmware glue
 
-enum StandState : uint8_t { STAND_OFF, STAND_ON };
+enum StandState : uint8_t { STAND_OFF, STAND_ON, STAND_RL, STAND_RL_DRY };
 
 // Keyframes: 16 joint angles + speed (the behavior-frame speed field, deg per step / 8 like skill.h).
 // Handstand frames 0-4 come from the hds behavior in InstinctBittleESP.h; the base pose averages
@@ -103,6 +107,9 @@ struct StandCtl {
   bool savedGyroBalance = true;
   int modeBase[2][DOF];        // tuned top pose per mode: [0] handstand, [1] rear stand
   bool modeBaseSet[2] = { false, false };
+  RlHandstandEngine rl;
+  unsigned long rlTicks = 0;
+  int rlTeleEvery = 5;
 } stand;
 
 void standSelectLegs(char mode) {
@@ -136,11 +143,49 @@ void standStop(const char *why) {
 }
 
 const int8_t fourLegPose[DOF] = { 0, 0, 0, 0, 0, 0, 0, 0, 30, 30, 30, 30, 30, 30, 30, 30 };
+const int8_t rlStandPose[DOF] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 23, 23, 23 };
 
 void standCatch() {  // fast move to the four-leg stand so the robot lands on its feet, not its back
   int target[DOF];
   for (int i = 0; i < DOF; i++) target[i] = fourLegPose[i];
   transform(target, 1, 4);
+}
+
+void rlMoveStandPose() {
+  stand.savedGyroBalance = gyroBalanceQ;
+  gyroBalanceQ = false;
+  int target[DOF];
+  for (int i = 0; i < DOF; i++) target[i] = rlStandPose[i];
+  transform(target, 1, 2);
+}
+
+void rlStart(bool dryRun, int teleEveryOverride = -1) {
+  if (!updateGyroQ) {
+    printToAllPorts("#B error: IMU updates are off (send gU)");
+    return;
+  }
+  stand.savedGyroBalance = gyroBalanceQ;
+  gyroBalanceQ = false;
+  imuSkip = IMU_SKIP;
+  frame = 0;
+  if (!dryRun) {
+    int target[DOF];
+    for (int i = 0; i < DOF; i++) target[i] = rlStandPose[i];
+    transform(target, 1, 2);
+    delay(150);
+  }
+  float gIn[3] = { imuGyroRad[0], imuGyroRad[1], imuGyroRad[2] };
+  float uIn[3] = { imuWorldUp[0], imuWorldUp[1], imuWorldUp[2] };
+  float angUsd[3], gravUsd[3];
+  stand.rl.imuToUsd(gIn, uIn, angUsd, gravUsd);
+  stand.rl.reset(angUsd, gravUsd);
+  stand.rlTicks = 0;
+  if (teleEveryOverride >= 0) stand.rlTeleEvery = teleEveryOverride;
+  else if (dryRun && stand.rlTeleEvery <= 0) stand.rlTeleEvery = 5;
+  stand.fallSince = 0;
+  stand.lastMicros = micros();
+  stand.state = dryRun ? STAND_RL_DRY : STAND_RL;
+  printToAllPorts(dryRun ? "#RL start dry" : "#RL start live");
 }
 
 void standStart(char mode) {
@@ -196,7 +241,48 @@ void standApply(float u, float rollErr) {
 
 // Called from loop() every pass. Runs one control tick per new IMU sample (the IMU task updates every ~5 ms).
 void balanceLoop() {
-  if (stand.state != STAND_ON) return;
+  if (stand.state == STAND_OFF) return;
+  if (stand.state == STAND_RL || stand.state == STAND_RL_DRY) {
+    unsigned long now = micros();
+    if ((unsigned long)(now - stand.lastMicros) < RL_STEP_PERIOD_US) return;
+    stand.lastMicros = now;
+    idleTimer = millis();
+
+    float gIn[3] = { imuGyroRad[0], imuGyroRad[1], imuGyroRad[2] };
+    float uIn[3] = { imuWorldUp[0], imuWorldUp[1], imuWorldUp[2] };
+    float angUsd[3], gravUsd[3];
+    stand.rl.imuToUsd(gIn, uIn, angUsd, gravUsd);
+
+    if (stand.state == STAND_RL && stand.catchFall && (fabsf(gravUsd[0]) > 0.85f || gravUsd[2] > 0.75f)) {
+      if (!stand.fallSince) stand.fallSince = millis();
+      if (millis() - stand.fallSince > 120) {
+        standStop("rl_fall");
+        standCatch();
+        return;
+      }
+    } else {
+      stand.fallSince = 0;
+    }
+
+    float ocDeg[16];
+    float act[RL_ACT_DIM];
+    stand.rl.step(gIn, uIn, ocDeg, act);
+    if (stand.state == STAND_RL) {
+      for (int j = 0; j < RL_ACT_DIM; ++j) {
+        calibratedPWM(RL_JOINT_OC_IDX[j], ocDeg[RL_JOINT_OC_IDX[j]]);
+      }
+    }
+    int teleN = stand.state == STAND_RL_DRY ? max(1, stand.rlTeleEvery) : stand.teleEvery;
+    if (teleN > 0 && ++stand.rlTicks % teleN == 0) {
+      char buf[160];
+      snprintf(buf, sizeof(buf),
+               "#RL g=(%.2f,%.2f,%.2f) w=(%.2f,%.2f,%.2f) deg=(%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f)",
+               gravUsd[0], gravUsd[1], gravUsd[2], angUsd[0], angUsd[1], angUsd[2],
+               ocDeg[8], ocDeg[9], ocDeg[10], ocDeg[11], ocDeg[12], ocDeg[13], ocDeg[14], ocDeg[15]);
+      printToAllPorts(buf);
+    }
+    return;
+  }
   unsigned long now = micros();
   float dt = (now - stand.lastMicros) * 1e-6f;
   if (dt < IMU_PERIOD * 1e-3f) return;
@@ -273,6 +359,9 @@ void standCommand(const char *cmd) {
     case 't': if (n >= 1) stand.teleEvery = max(0, int(a)); break;
     case 'e': if (n >= 1) { stand.external = a != 0; stand.uExt = 0; } break;
     case 'u': if (n >= 1) stand.uExt = fmaxf(-stand.pid.limit, fminf(stand.pid.limit, a)); break;
+    case '0': rlMoveStandPose(); break;
+    case 'S': rlStart(true, n >= 1 ? max(0, int(a)) : 5); break;
+    case 'R': rlStart(false, n >= 1 ? max(0, int(a)) : 0); break;
     case '?': standPrintParams(); break;
     default: printToAllPorts("#B unknown y subcommand"); break;
   }
