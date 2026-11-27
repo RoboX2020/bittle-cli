@@ -1,66 +1,46 @@
-# Lab 03: Bittle URDF, USD Conversion, Scale Fixes & Legacy Isaac Sim
+# Lab 03: Import Bittle into Isaac Sim and validate the model
 
-## Learning Objectives
-By the end of this lab, you will be able to:
-1. Inspect Petoi Bittle's URDF kinematics, link masses, and joint limits (`assets/urdf/`).
-2. Convert and validate the Bittle USD stage for Isaac Sim 6.2 / Isaac Lab 3.0 (`assets/usd_10x/` vs `assets/usd_real_1x/`).
-3. Identify and fix three critical USD pitfalls: duplicate `ArticulationRootAPI`, `10×` decimeter scaling (`100×` inertia error), and mirrored right-knee `rot0` joint signs.
-4. Review the legacy Isaac Sim 4.5.0 PyQt5/extension setup (`training/legacy_isaac_sim_4_5/` and `assets/images/`).
+## Start here
+A URDF describes a robot's links, joints, geometry and inertial properties. USD is the scene/asset format used by Isaac Sim. Importing a mesh that looks like Bittle is only the beginning: a useful simulation needs correct scale, articulation, contacts, joint directions and actuators.
 
----
+## What you will learn
+- Import the repository's URDF through Isaac Sim's documented importer.
+- Separate a visual asset from a physically validated articulation.
+- Diagnose scale, root and joint-sign errors before learning a policy.
 
-## 1. Bittle URDF Anatomy (`assets/urdf/`)
+## Before you start: choose a version lane
+The repository records an Isaac Sim 6.2 / Isaac Lab 3.0 workstation workflow and an older 4.5.0 GUI. NVIDIA's current online documentation can move independently. Record your installed versions and use matching documentation. The old PyQt/extension screenshots are historical context, not a current installation recipe. Import UI labels may differ by release.
 
-The repository includes the full URDF package from `Bittle-IsaacSim/Bittle_URDF`:
-- [bittle.urdf](../assets/urdf/urdf/bittle.urdf) and [bittle.stl](../assets/urdf/urdf/bittle.stl) (`16 MB`)
-- Low-poly `.obj` visual/collision meshes in [assets/urdf/meshes/obj/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/urdf/meshes/obj)
-- Reference joint locations ([joint_locs.txt](../assets/urdf/joint_locs.txt)) and Isaac Gym test script ([joint_monkey.py](../assets/urdf/joint_monkey.py))
+## 1. Inspect the source before import
+Open `assets/urdf/urdf/bittle.urdf`. Identify one parent/child joint, its axis and limit, one mesh reference, and one inertial element. Keep the whole URDF package together so relative/package mesh paths resolve. Read the console if meshes are missing; do not replace collision or inertia data with arbitrary values to hide an import error.
 
-### Coordinate Frame & Measured Masses
-In `base_frame_link` local coordinates:
-- **Front** is **`+Y`** (`y = +0.5226` in URDF / `usd_10x`, `+0.0523 m` in `usd_real_1x`)
-- **Back** is **`-Y`** (`y = -0.5192` in URDF / `usd_10x`, `-0.0519 m` in `usd_real_1x`)
-- **Left / Right** is **`-X` / `+X`** (`-0.4460` / `+0.4515` in URDF)
-- **Up** is **`+Z`**
-- **Weighed Link Masses (real kg):** `base_frame_link = 0.179 kg`, `4 × shoulder_link = 0.006 kg` each, `4 × knee_link = 0.017 kg` each (**Total = `0.271 kg`**).
+## 2. Import through Isaac Sim
+1. Start the matching Isaac Sim release and a new stage. Save your work in a new writable project directory, not over the supplied asset.
+2. Open **File > Import** and select `assets/urdf/urdf/bittle.urdf`. If URDF support is absent, use **Window > Extensions** to enable `isaacsim.asset.importer.urdf`.
+3. Set a writable USD output location. Resolve package paths if requested. Keep the generated USD and its referenced meshes/configuration together.
+4. Review collision, fixed-base and drive settings. Bittle is a floating-base legged robot, not a bench-mounted arm. Do not carry a fixed-base arm example into a locomotion task. Choose position drives for an intentional position-controlled scene, or no imported drives where the later task's actuator supplies control. Avoid two competing controllers.
+5. Import, then read the Output Log. Open the generated stage and inspect the hierarchy before pressing Play.
 
----
+![URDF import options in NVIDIA documentation](media/urdf-import-settings.png)
+*Documentation image: NVIDIA, [Tutorial: Import URDF](https://docs.isaacsim.omniverse.nvidia.com/latest/importer_exporter/import_urdf.html). The pictured asset is UR10, not Bittle. It illustrates the importer controls only; the Bittle-specific choices are described in this lesson.*
 
-## 2. Three Critical USD Bugs & How We Fixed Them
+NVIDIA's [URDF importer reference](https://docs.isaacsim.omniverse.nvidia.com/latest/importer_exporter/ext_isaacsim_asset_importer_urdf.html) explains the options. Its arm example's self-collision selection is not a universal Bittle setting. Begin with the configuration your Bittle task expects and document any change.
 
-### Bug 1: Duplicate `ArticulationRootAPI` (Blocks Isaac Lab Spawning)
-The raw USD inside `Bittle_URDF/bittle/` had `PhysicsArticulationRootAPI` applied to **both** `/bittle` and `/bittle/base_frame_link` in `bittle.usd` and `configuration/bittle_physics.usd`.
-- **Fix (`assets/usd_10x/`):** Stripped `PhysicsArticulationRootAPI` from `/bittle/base_frame_link`, leaving `/bittle` as the sole articulation root.
+## 3. Validate the articulation
+Show collision geometry using the viewport eye menu, **Show by type > Physics > Colliders > All** in the documented UI. Confirm collision shapes fit the intended contact surfaces. Inspect the composed stage for one intended articulation root; this repository's corrected assets use `/bittle`. Duplicate root APIs caused spawning problems in the author's original conversion.
 
-### Bug 2: `10×` Decimeter Geometry vs `1×` Kilogram Mass
-The original URDF/USD exported CAD dimensions in decimeters (`1.04 m` wheelbase, `0.58 m` standing height) while keeping real `0.271 kg` masses. This caused:
-- `100×` inflated rotational inertia (`0.0217` vs `0.000217 kg·m²` on torso)
-- $\sqrt{10} \approx 3.16\times$ slower gravitational tipping dynamics than the physical dog!
-- **Fix (`assets/usd_real_1x/`):** Scaled all mesh vertices/extents, translations, joint `localPos0/1`, and `centerOfMass` by **`0.1`** and `diagonalInertia` by **`0.01`**, preserving exact `0.271 kg` masses:
-  - Torso: `9.8 cm × 12.9 cm × 3.6 cm`, `10.42 cm` wheelbase, `4.92 cm` thigh, `5.56 cm` shin.
+Place the robot above a ground plane, enable gravity and use a suitable physics scene. Begin with a single environment. Check that the initial pose is above the floor without interpenetration and that feet, rather than unintended links, support the robot. Keep this a simulation exercise until the model checks pass.
 
-### Bug 3: Mirrored Right-Knee `rot0` Sign Inversion
-Inspecting USD joint frames revealed:
-- `left_front_knee_joint`, `left_back_knee_joint`: `localRot0 = (1, 0, 0, 0)`
-- `right_front_knee_joint`, `right_back_knee_joint`: `localRot0 = (0, 0, 0, 1)` (`180°` Z rotation!)
+## 4. Measure scale and mass
+This repository includes both `assets/usd_10x/` and `assets/usd_real_1x/`. They are not interchangeable training assets. The author's real-scale reference is about 10.42 cm wheelbase and 0.271 kg total mass; the larger legacy asset has different dynamics and actuator settings. Inspect the stage's units and measured dimensions, not just its visual size in the viewport.
 
-Setting `.*_knee_joint = +0.2` bent left knees **down** onto the paws and right knees **up** onto the right elbows (`right_back_shoulder_link = 1.11 N`).
-- **Fix:** Initialize symmetrically with `left_.*_knee_joint = +0.4`, `right_.*_knee_joint = -0.4` at `z = 0.074 m` → all four `*_shoulder_link` contact forces drop to **`0.0000 N`**.
+For the author's conversion with mass held fixed, multiplying all lengths by 0.1 requires inertia to scale by 0.01. Changing the display transform alone does not prove that joint offsets, collision shapes, center of mass and inertia changed consistently. Use the supplied corrected stage as a comparison while keeping your own import output separate.
 
----
+## 5. Verify every joint
+List joint names and limits. Command one simulated joint at a time with a small target change and record its direction. The supplied USD has mirrored right-knee frames; the real-scale initial pose uses left knees +0.4 rad and right knees -0.4 rad. Treat this as asset-specific, not a universal servo sign rule. Build the mapping table used in Lab 04.
 
-## 3. Legacy Isaac Sim 4.5.0 Setup (`training/legacy_isaac_sim_4_5/`)
+## Submit
+A screenshot of your imported Bittle, the articulation-root path, measured wheelbase/mass, collision view and eight-joint direction table. Pass only when you can explain which asset and scale your next task will use. No GPU training run is required for this checkpoint.
 
-Earlier work used `Dafodilrat/Bittle-IsaacSim` (Isaac Sim 4.5.0 + Stable-Baselines3 PPO/DDPG/TD3/A2C + PyQt5 GUI):
-
-| Isaac Sim Scene | PyQt5 Trainer | Training Viewport |
-|---|---|---|
-| ![Isaac Sim](../assets/images/IsaacSim.png) | ![PyQt5 GUI](../assets/images/pyqt_gui.png) | ![Training](../assets/images/training.png) |
-
-**What Didn't Work:** The `RL Viewport` Omniverse extension (`exts/customView/customView/ext.py`, shown in [extension.png](../assets/images/extension.png)) broke due to Isaac Sim API changes and was superseded by the Isaac Lab 3.0 workflow in **Labs 05 & 06**.
-
----
-
-## Verification Checklist
-- [ ] Verify `/bittle` is the only `PhysicsArticulationRootAPI` in `assets/usd_10x/bittle.usd` and `assets/usd_real_1x/bittle.usd`
-- [ ] Confirm `assets/usd_real_1x/bittle.usd` bounding box shows `~10.4 cm` wheelbase and `0.271 kg` total mass
+## Continue
+[Lab 04: Build tasks and connect the real robot to simulation](Lab04_Real_to_Sim_and_Sim_to_Real.md)

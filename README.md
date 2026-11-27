@@ -6,14 +6,14 @@ End-to-end robotics repository for **Petoi Bittle / Bittle X** (`OpenCatEsp32`):
 
 ## Instructional Lab Modules ([`labs/`](labs/README.md))
 
-| Lab | Topic |
-|---|---|
-| **[Lab 01](labs/Lab01_Initializing_and_Programming_Bittle.md)** | Initializing Bittle, calibration, BiBoard boot sequence, OpenCat wire protocol & missing ROM skill diagnostics |
-| **[Lab 02](labs/Lab02_OpenCat_CLI_and_Terminal_Control.md)** | `bittle-cli` terminal controller, BlueZ/FFE1 BLE fixes, `bittle_mix.py` (`K` & `q`), and `mock_bittle.py` |
-| **[Lab 03](labs/Lab03_URDF_USD_and_Simulation_Setup.md)** | URDF & meshes, USD conversion, duplicate `ArticulationRootAPI`, `0.1×` real-scale & knee-sign fixes, legacy Isaac Sim 4.5.0 |
-| **[Lab 04](labs/Lab04_Real_to_Sim_and_Sim_to_Real.md)** | Real-to-Sim system ID (`DelayedPDActuatorCfg`), `sim/stand_sim.py` latency analysis, `firmware/balanceStand.h` (`y` token), Sim-to-Real paths |
-| **[Lab 05](labs/Lab05_IsaacLab_Locomotion_RL.md)** | Isaac Lab 3.0 locomotion RL (`Isaac-Velocity-Flat-Bittle` 100% success over 73.7M steps) & checkpoints |
-| **[Lab 06](labs/Lab06_IsaacLab_Handstand_Max_DR.md)** | 1:1 real-scale Handstand RL (`Isaac-Handstand-Bittle`), knees-off-ground rewards, 11-mechanism Max DR, Asymmetric IMU-only Actor |
+A general learning course from fundamentals to a project. Start with the mock; progress through modeling, tasks, transfer and training. Handstand is an advanced case study, not the prerequisite for every lesson.
+
+- [Lab 01: Robot fundamentals and safe first commands](labs/Lab01_Initializing_and_Programming_Bittle.md)
+- [Lab 02: Terminal control, protocols and motion sequences](labs/Lab02_OpenCat_CLI_and_Terminal_Control.md)
+- [Lab 03: Import Bittle into Isaac Sim and validate the model](labs/Lab03_URDF_USD_and_Simulation_Setup.md)
+- [Lab 04: Build tasks and connect the real robot to simulation](labs/Lab04_Real_to_Sim_and_Sim_to_Real.md)
+- [Lab 05: Train and evaluate a locomotion policy](labs/Lab05_IsaacLab_Locomotion_RL.md)
+- [Lab 06: Project studio: sim-to-real, with handstand as a case study](labs/Lab06_IsaacLab_Handstand_Max_DR.md)
 
 ---
 

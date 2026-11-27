@@ -1,83 +1,78 @@
-# Lab 04: Real-to-Sim System ID & Sim-to-Real Control Bridges
+# Lab 04: Build tasks and connect the real robot to simulation
 
-## Learning Objectives
-By the end of this lab, you will be able to:
-1. Map Isaac Lab's 8-DoF joint ordering to OpenCat's 16-channel servo indices.
-2. Quantify physical two-leg balance limits and wireless link latency using `sim/stand_sim.py`.
-3. Understand the custom `OpenCatEsp32` closed-loop firmware patch (`firmware/balanceStand.h` + `balance_stand.patch`).
-4. Choose between Open-Loop `K`-token distillation and Closed-Loop IMU-only Option 2 deployment.
+## Start here
+An imported robot is an asset. A task adds a world, observations, actions, objectives, resets and stop conditions. Real-to-sim means using measurements from the physical system to improve those choices; it is more than showing live robot motion in a viewport.
 
----
+## What you will learn
+- Turn a validated articulation into a task specification.
+- Build a joint/unit/timing interface contract.
+- Design conservative system-identification and telemetry experiments.
 
-## 1. Joint & Coordinate Mapping (Isaac Sim ↔ OpenCatEsp32)
+## 1. Specify a task before coding
+Start with four-foot standing or flat-ground velocity tracking, not an inverted balance challenge. Write down: terrain, initial pose, desired behavior, allowed contacts, time limit and measurable failure conditions. For velocity tracking, the desired command and measured body velocity differ; that difference is a tracking error. A reward is a training signal, not automatically a success metric.
 
-| OpenCat Index | Physical Servo | Isaac Lab Joint Name |
-|---|---|---|
-| `8` | Front Left Shoulder | `left_front_shoulder_joint` |
-| `9` | Front Right Shoulder | `right_front_shoulder_joint` |
-| `10` | Back Right Hip | `right_back_shoulder_joint` |
-| `11` | Back Left Hip | `left_back_shoulder_joint` |
-| `12` | Front Left Knee | `left_front_knee_joint` |
-| `13` | Front Right Knee | `right_front_knee_joint` |
-| `14` | Back Right Knee | `right_back_knee_joint` |
-| `15` | Back Left Knee | `left_back_knee_joint` |
+Use this interface contract:
+- **Asset:** USD path, scale, mass and joint names from Lab 03.
+- **Actions:** eight joint targets or offsets, their order, units, scale, neutral pose and clamp limits.
+- **Observations:** available sensors, frame, units, normalization and history length.
+- **Timing:** simulation step, control step, communication delay and timeout behavior.
+- **Resets:** safe initial state and termination reasons, including invalid physics.
 
-> **Remember:** In `bittle.usd`, `right_*_knee_joint` has a `180°` `localRot0` flip relative to `left_*_knee_joint`. Always verify joint sign conventions on a foam mat before sending live RL joint targets to hardware!
+## 2. Read the existing Isaac Lab task
+Open `training/isaaclab_bittle_config/__init__.py`, then `rough_env_cfg.py`, `flat_env_cfg.py` and `agents/rsl_rl_ppo_cfg.py`. Registration binds a task ID to an environment class and an RL runner. The flat configuration inherits the rough configuration and removes terrain/height-scan features. Follow those imports instead of copying only the shortest file.
 
----
+Locate the scene robot, actuator settings, observation group, reward terms, commands, reset events and terminations. Create a one-page map from each concept to its file/class. Modify a copy for experiments. Keep the original task as your baseline.
 
-## 2. Planar Physics & Link-Latency Analysis (`sim/stand_sim.py`)
+The supplied locomotion configuration references the larger asset, uses a 0.58 m target standing height and 15 N m effort limit. Those are that archived simulation's settings, not instructions for the real Bittle. The handstand configuration uses the real-scale asset and a different actuator/pose setup. Do not mix a real-scale USD with the legacy values and call it a validated model.
 
-Run the planar two-leg stand physics simulator:
-```bash
-python3 sim/stand_sim.py --links
+## 3. Map real and simulated joints
+Use this name mapping, then verify signs and offsets on your own asset:
+```text
+8  left_front_shoulder_joint
+9  right_front_shoulder_joint
+10 right_back_shoulder_joint
+11 left_back_shoulder_joint
+12 left_front_knee_joint
+13 right_front_knee_joint
+14 right_back_knee_joint
+15 left_back_knee_joint
 ```
+A conversion is more than `radians * 180 / pi`. It also needs the correct permutation, direction sign, calibration offset and allowed range for each joint. Write a table with all of those columns. First test the mapping in simulation and the mock. Physical single-joint checks require the manufacturer's calibration/support procedure, small approved motion and supervision.
 
-Observed results (`MB=0.25 kg`, `MA=0.04 kg`, `L1=0.085 m`, `L2=0.07 m`, `TAU=0.035 s`, `WMAX=350°/s`):
+## 4. Bring measurements into simulation
+Record the robot/firmware identity, geometry, battery condition, surface, payload and measurement method. For a supported, conservative target step, log command time and any actual measured response. Do not infer joint position feedback merely because a command was acknowledged: verify what the board exposes. Log timestamps and units for IMU samples and note the coordinate frame.
 
-| Paw Contact Length | Static Pose Window | Hold Pose (No PID) | PID on Body Pitch | PID on Leg Tilt |
-|---|---|---|---|---|
-| `4 mm` (toe tips) | `±1°` | `1.2 mN s` | `0.0 mN s` (falls) | `0.0 mN s` (falls) |
-| `8 mm` | `±3°` | `5.9 mN s` | `0.0 mN s` (falls) | `0.0 mN s` (falls) |
-| `16 mm` | `±6°` | `15.2 mN s` | `0.0 mN s` (falls) | `0.0 mN s` (falls) |
-| `30 mm` | `±12°` | `31.6 mN s` | `0.0 mN s` (falls) | `0.0 mN s` (falls) |
-| `50 mm` (shin/pads) | `±21°` | `55.1 mN s` | `41.0 mN s` | `0.0 mN s` (falls) |
+Compare repeated trials to a model: dead time before response, rise/settling behavior, saturation and steady error. Keep measured values separate from estimated parameters. Change one model parameter at a time and test on a different trial. A parameter fitted to one movement is not universal identification.
 
-**Control Link Tolerance (`50 mm` contact, PID on pitch):**
-- Onboard firmware PID (`12 ms` delay / `5 ms` tick): **`41.0 mN s`**
-- Laptop over USB serial (`30 ms` / `10 ms`): **`34.0 mN s`**
-- Laptop over BLE (`75 ms` / `15 ms`): **`17.6 mN s`**
-- Laptop over WiFi (`90 ms` / `20 ms`): **`0.0 mN s` (fails)**
+The author's two-leg planar model is available as an optional sensitivity exercise:
+```bash
+python sim/stand_sim.py --links
+```
+Vary contact size or communication assumptions in a separate copy and compare stability. This reduced model teaches delay/contact sensitivity; its numbers do not establish your robot's safe operating envelope.
 
-**Physical Conclusion:** Bittle has no ankle actuators. Over BLE (`75 ms` lag) or open-loop animation, `4 mm` toe-tip handstands tip within a `±1°` window (which is why our real hardware test of `bittle --ble play handstand` hit its head and self-righted). Real two-leg balance requires either high-rate onboard/USB closed-loop control (`>= 50–200 Hz`) or a wider contact patch.
+## 5. Use feedback, not just playback
+In open loop, targets follow a schedule regardless of measured error. In closed loop, observations affect the next command. Network delay changes when those observations and commands matter. A mirrored digital twin can display state without controlling the physical robot at all; describe whether your link is observation-only, command-only or bidirectional.
 
----
+Before a bidirectional bridge, define message schema, frame transforms, timestamp handling, dropped-packet policy, target clamps, watchdog and stop behavior. Begin with replayed logs, then live observation-only telemetry. Hardware actuation is a later gate, not a default side effect of connecting a dashboard.
 
-## 3. Custom Closed-Loop Firmware Patch (`firmware/`)
+## Worked interface example: a log before a live bridge
+Use a CSV log with columns `host_time_s,robot_time_ms,pitch_deg,roll_deg,source`. Keep the original sensor values and record the sign/frame convention. A learner-created bridge can replay these samples to a visual marker in simulation first. Do not overwrite the simulated robot state and then describe that display as a validated dynamics model.
 
-`firmware/balanceStand.h` and `firmware/balance_stand.patch` add serial token `'y'` (`yh`, `yr`, `yg`, `yx`, `yz`, `ya`, `yp`, `ys`, `ym`, `yc`, `yl`, `yf`, `yw`, `yb`, `yB`, `yt`, `ye`, `yu`, `y?`) to `OpenCatEsp32` (pinned at commit `84dd6eff307eb2f4af6f9cbdf72f04e7d71beecf`), providing:
-- `~200 Hz` onboard IMU loop (`balanceLoop()`)
-- Automatic four-leg fall catch (`standCatch()`)
-- `~50–100 Hz` `#B ms pitch err u roll` telemetry (`stand watch` / `stand laptop`)
+For actions, an example conversion contract is:
+```python
+# Interface sketch, not a complete hardware controller.
+# q_rad is a simulation joint angle in the declared joint order.
+# Fill sign, zero_deg and limits from your own verified mapping.
+q_deg = q_rad * 180.0 / math.pi
+servo_deg = sign * q_deg + zero_deg
+servo_deg = max(min_deg, min(max_deg, servo_deg))
+```
+Apply a separate rate limit between the previous target and this target. Check finite values, stale timestamps and joint count before conversion. Reject a malformed observation instead of continuing with old data. Unit-test a neutral pose, a small positive angle, a reversed joint and an out-of-range target entirely offline.
 
-**Current Status:** Host-tested under `BALANCE_STAND_HOST_TEST`; **not yet compiled for ESP32 or flashed onto hardware**. See [HANDSTAND_AND_FIRMWARE.md](../docs/HANDSTAND_AND_FIRMWARE.md) for flashing steps.
+The repository contains transport and stand-controller experiments, not a universal plug-and-play ROS/Isaac bridge. In a live implementation, the transport receiver should only update a timestamped buffer; the control tick should consume one consistent snapshot. Log received data and computed targets before enabling any outgoing actuation. This makes observation-only mirroring a concrete first milestone, while keeping a learned controller's deployment a separate engineering task.
 
----
+## Submit
+A task sheet, joint-interface table and a real-to-sim experiment plan or measured log with explicit sensor limits. Pass when the chosen action/observation contract can be implemented without inventing unavailable sensors or silently changing scale.
 
-## 4. Real-to-Sim & Sim-to-Real Deployment Paths
-
-### Real-to-Sim System Identification
-Match simulation actuators to physical P1S micro-servos using `DelayedPDActuatorCfg`:
-- `effort_limit = 0.35 N·m`, `velocity_limit = 6.1 rad/s` (`350°/s`)
-- `min_delay = 4`, `max_delay = 8` steps (`20–40 ms` lag at `dt = 0.005 s`)
-- Domain randomization over mass, CoM, inertia, joint friction, stiffness/damping, and floor friction.
-
-### Sim-to-Real Deployment Options
-1. **Option 1 — Open-Loop `K` Trajectory Export (BLE-compatible):** Sample simulation joint trajectories at `20 Hz` (`50 ms`), convert radians to OpenCat `int8` degrees, and upload via `K`.
-2. **Option 2 — Closed-Loop IMU-Only Policy (USB Serial / Onboard ESP32):** Train with an **Asymmetric Actor-Critic** where the deployed Actor sees **only** `[base_ang_vel, projected_gravity, last_action]` stacked over `history_length = 4` (`56` dims) — eliminating unobservable `base_lin_vel` and servo encoders (implemented in **Lab 06**).
-
----
-
-## Verification Checklist
-- [ ] Run `python3 sim/stand_sim.py --links` and verify link-latency output
-- [ ] Verify `patch --dry-run -p1 < firmware/balance_stand.patch` against `OpenCatEsp32` (`84dd6eff`) before flashing
+## Continue
+[Lab 05: Train and evaluate a locomotion policy](Lab05_IsaacLab_Locomotion_RL.md)
