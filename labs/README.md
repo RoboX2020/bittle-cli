@@ -1,29 +1,31 @@
-# Petoi Bittle Robotics Lab Curriculum
+# Bittle: from robot basics to a working project
 
-A complete, end-to-end hands-on robotics curriculum taking you from unboxing and programming a physical **Petoi Bittle / Bittle X** (`OpenCatEsp32`), through terminal CLI control, URDF/USD modeling, Real-to-Sim and Sim-to-Real bridging, GPU locomotion RL, and 1:1 real-scale **Handstand Reinforcement Learning with Maximum Domain Randomization** in NVIDIA Isaac Lab 3.0.
+Learn Bittle as a general robotics platform: understand the mechanism, control it through a terminal, build and validate its simulation model, define tasks, train a policy and plan a measured transfer to hardware. Handstand appears at the end as an advanced project case study, not the premise of the course.
 
-Every lab references the **actual code, URDF/USD models, images, checkpoints, firmware patches, and hardware/simulation logs** archived in this repository.
+## How to use this course
+Work through the six labs in order. Each has explanations, guided practice and a concrete submission. Start with the mock. Move to simulation only after the command/model interfaces make sense, and treat physical actuation as a separate supervised gate.
 
----
+- **Computer-only route:** Labs 01-02 use the mock. Labs 03-06 can be studied through models, source and archived logs; label that work as analysis when you do not run the simulator.
+- **Simulation route:** a compatible Isaac Sim/Isaac Lab installation and GPU are needed for the relevant import/training exercises. Record versions and adapt the author's workstation paths.
+- **Hardware route:** requires the correct robot/firmware, manufacturer calibration, safe support and supervision. A simulator or mock pass is not permission to run a stunt.
 
-## Lab Modules
+## Learning path
+1. [Lab 01: Robot fundamentals and safe first commands](Lab01_Initializing_and_Programming_Bittle.md)
+2. [Lab 02: Terminal control, protocols and motion sequences](Lab02_OpenCat_CLI_and_Terminal_Control.md)
+3. [Lab 03: Import Bittle into Isaac Sim and validate the model](Lab03_URDF_USD_and_Simulation_Setup.md)
+4. [Lab 04: Build tasks and connect the real robot to simulation](Lab04_Real_to_Sim_and_Sim_to_Real.md)
+5. [Lab 05: Train and evaluate a locomotion policy](Lab05_IsaacLab_Locomotion_RL.md)
+6. [Lab 06: Project studio: sim-to-real, with handstand as a case study](Lab06_IsaacLab_Handstand_Max_DR.md)
 
-| Lab | Title | Key Artifacts in Repo |
-|---|---|---|
-| **[Lab 01](Lab01_Initializing_and_Programming_Bittle.md)** | **Initializing & Programming Bittle Normally** | `combos.json`, `firmware/balanceStand.h` |
-| **[Lab 02](Lab02_OpenCat_CLI_and_Terminal_Control.md)** | **OpenCat Terminal Control, BLE Debugging & Motion Fusion** | `bittle_cli.py`, `bittle_mix.py`, `mock_bittle.py`, `test_bittle.py`, `cli_data/` |
-| **[Lab 03](Lab03_URDF_USD_and_Simulation_Setup.md)** | **URDF, USD Conversion, Scale/Root Fixes & Legacy Isaac Sim** | `assets/urdf/`, `assets/usd_10x/`, `assets/usd_real_1x/`, `assets/images/`, `training/legacy_isaac_sim_4_5/` |
-| **[Lab 04](Lab04_Real_to_Sim_and_Sim_to_Real.md)** | **Real-to-Sim System ID & Sim-to-Real Control Bridges** | `sim/stand_sim.py`, `firmware/balanceStand.h`, `firmware/balance_stand.patch`, `bittle_mix.py` |
-| **[Lab 05](Lab05_IsaacLab_Locomotion_RL.md)** | **Quadruped Locomotion RL in Isaac Lab (Flat & Rough)** | `training/isaaclab_bittle_config/`, `training/scripts/`, `training/models/locomotion_flat/` |
-| **[Lab 06](Lab06_IsaacLab_Handstand_Max_DR.md)** | **1:1 Real-Scale Handstand RL with Max Domain Randomization** | `training/isaaclab_bittle_config/handstand_*.py`, `training/models/handstand_10x/`, `training/models/handstand_real_1x/` |
+## What changes from the original project notes
+The lessons now teach reusable concepts before explaining repository-specific details. They add scaffolded exercises, acceptance checks, version/setup guidance and a project choice. The original six lessons are preserved outside the published course as project records. Their reported results have not been erased or turned into promised learner outcomes.
 
----
+The repository's code, models, firmware and training runs remain the author's work. The course does not claim that every archived script is portable, that a simulated actor is a finished hardware bridge, or that an older pending status is current. Use the source/configuration belonging to your exact checkpoint.
 
-## Repository Data Map (All Computer Data Included)
+## Documentation and image credits
+- [Petoi joint index](https://docs.petoi.com/petoi-robot-joint-index) and [joint calibration](https://docs.petoi.com/joint-calibration).
+- [Petoi serial protocol](https://docs.petoi.com/apis/serial-protocol).
+- [NVIDIA URDF import tutorial](https://docs.isaacsim.omniverse.nvidia.com/latest/importer_exporter/import_urdf.html) and [importer reference](https://docs.isaacsim.omniverse.nvidia.com/latest/importer_exporter/ext_isaacsim_asset_importer_urdf.html).
+- [Isaac Lab quickstart](https://isaac-sim.github.io/IsaacLab/main/source/isaaclab/quickstart.html).
 
-- **CLI & Firmware:** [bittle_cli.py](../bittle_cli.py), [bittle_mix.py](../bittle_mix.py), [combos.json](../combos.json), [mock_bittle.py](../mock_bittle.py), [test_bittle.py](../test_bittle.py), [firmware/](https://github.com/RoboX2020/bittle-cli/tree/main/firmware), [sim/stand_sim.py](../sim/stand_sim.py), [cli_data/](https://github.com/RoboX2020/bittle-cli/tree/main/cli_data)
-- **Images & Screenshots:** [assets/images/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/images) (`IsaacSim.png`, `pyqt_gui.png`, `training.png`, `extension.png`, `bittle_usd_thumb.png`)
-- **URDF & Meshes:** [assets/urdf/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/urdf) (`bittle.urdf`, `bittle.stl`, `meshes/obj/*.obj`, `joint_locs.txt`, `joint_monkey.py`)
-- **USD Models:** [assets/usd_10x/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/usd_10x) (fixed articulation root) and [assets/usd_real_1x/](https://github.com/RoboX2020/bittle-cli/tree/main/assets/usd_real_1x) (1:1 real-scale `0.1×` linear / `0.01×` inertia)
-- **Training Configs, Scripts, Checkpoints & Logs:** [training/](https://github.com/RoboX2020/bittle-cli/tree/main/training) (`isaaclab_bittle_config/`, `scripts/`, `models/`, `logs/`, `legacy_isaac_sim_4_5/`)
-- **Worklog & Inventory:** [docs/](https://github.com/RoboX2020/bittle-cli/tree/main/docs)
+Documentation images are credited beside their use. The NVIDIA importer screenshot depicts UR10 controls, explicitly not a Bittle import result. The supplied Bittle simulator image is a historical repository screenshot, not evidence of a new run.
